@@ -134,6 +134,7 @@ input[type=date]{font-size:16px !important;}
       <div class="dday-n" id="sb-dday">D-</div>
       <div class="dday-dt">2026년 6월 25일</div>
     </div>
+    <div id="sb-calendar" style="margin:10px 10px 0;padding:8px 10px;background:rgba(255,255,255,.04);border-radius:10px;"></div>
     <div class="prog-box">
       <div style="display:flex;justify-content:space-between;font-size:12px;color:rgba(255,255,255,.55);margin-bottom:5px;">
         <span>전체 진행률</span><span id="sb-pct" style="color:#60A5FA;font-weight:700;">0%</span>
@@ -147,6 +148,7 @@ input[type=date]{font-size:16px !important;}
     <div style="padding-top:8px;">
       <div class="sb-grp">메인 메뉴</div>
       <div class="nav-item active" onclick="goPage('home')" data-p="home">🏠 홈</div>
+      <div class="nav-item" onclick="goPage('todo')" data-p="todo">📅 To-do List</div>
       <div class="nav-item" onclick="goPage('checklist')" data-p="checklist">✅ 준비 현황</div>
       <div class="nav-item" onclick="goPage('agenda')" data-p="agenda">📋 Agenda</div>
       <div class="nav-item" onclick="goPage('speakers')" data-p="speakers">👥 참석자 관리</div>
@@ -292,6 +294,7 @@ const DEFAULT_SP = [
 
 let CL = DEFAULT_CL.map(t=>({...t}));
 let SP = DEFAULT_SP.map(s=>({...s}));
+let DAILY_TODOS = {}; // {YYYY-MM-DD: [{id, task, done, time}, ...]}
 let curPage = "home";
 let catOpen = Object.fromEntries(CATS.map(c=>[c,true]));
 let clEditId = null, spEditId = null;
@@ -342,6 +345,7 @@ function initFirebase(cfg) {
       if (d.bi && Array.isArray(d.bi))  BUDGET_ITEMS  = d.bi;
       if (d.td && Array.isArray(d.td))  TRAVEL_DETAIL = d.td;
       if (d.be && Array.isArray(d.be))  BUDGET_ENTRIES= d.be;
+      if (d.dt && typeof d.dt === "object") DAILY_TODOS = d.dt;
       if (d.agendaHtml)   { AGENDA_HTML = d.agendaHtml; AGENDA_ROWS = null; }
       if (d.agendaMeta)   AGENDA_META = d.agendaMeta;
       if (d.savedAt)      savedAt     = d.savedAt;
@@ -374,6 +378,7 @@ async function saveToFirestore() {
       bi: BUDGET_ITEMS,
       td: TRAVEL_DETAIL,
       be: BUDGET_ENTRIES,
+      dt: DAILY_TODOS,
       agendaHtml: AGENDA_HTML,
       agendaMeta: AGENDA_META,
       savedAt: now,
@@ -505,7 +510,7 @@ function closeSidebar() {
 function goPage(page) {
   curPage = page;
   clEditId=null; spEditId=null; clAddCat=null; spShowAdd=false; clAttachId=null;
-  const ttls={home:"홈",checklist:"준비 현황",agenda:"Agenda",speakers:"참석자 관리",budget:"예산 관리",magic:"AI Magic Box",files:"파일 보관함",export:"내보내기"};
+  const ttls={home:"홈",todo:"📅 To-do List",checklist:"준비 현황",agenda:"Agenda",speakers:"참석자 관리",budget:"예산 관리",magic:"AI Magic Box",files:"파일 보관함",export:"내보내기"};
   document.getElementById("pg-ttl").textContent = ttls[page]||"홈";
   document.querySelectorAll(".nav-item[data-p]").forEach(el=>el.classList.toggle("active",el.dataset.p===page));
   document.querySelectorAll(".bn-item[data-bn]").forEach(el=>el.classList.toggle("active",el.dataset.bn===page));
@@ -516,9 +521,10 @@ function goPage(page) {
 function draw() {
   const el = document.getElementById("body");
   if (!el) return;
-  const fns = {home:pageHome, checklist:pageChecklist, agenda:pageAgenda, speakers:pageSpeakers, budget:pageBudget, magic:pageMagic, files:pageFiles, export:pageExport};
+  const fns = {home:pageHome, todo:pageTodo, checklist:pageChecklist, agenda:pageAgenda, speakers:pageSpeakers, budget:pageBudget, magic:pageMagic, files:pageFiles, export:pageExport};
   el.innerHTML = (fns[curPage]||pageHome)();
   bindEvents();
+  renderSidebarCalendar();
 }
 
 function pctBar(p,h=5) {
@@ -560,6 +566,215 @@ function calcUrgCnt() {
   }).length;
 }
 
+// ═══════════════════════════════════════════════════════════
+//   사이드바 미니 캘린더 + To-do List
+// ═══════════════════════════════════════════════════════════
+let calViewYM = null; // {y, m} 표시 중인 연월
+let selectedDate = null; // YYYY-MM-DD
+
+function ymdStr(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,"0");
+  const dd = String(d.getDate()).padStart(2,"0");
+  return `${y}-${m}-${dd}`;
+}
+
+function renderSidebarCalendar() {
+  const el = document.getElementById("sb-calendar");
+  if (!el) return;
+  if (!calViewYM) {
+    const now = new Date();
+    calViewYM = {y: now.getFullYear(), m: now.getMonth()};
+  }
+  const {y, m} = calViewYM;
+  const firstDay = new Date(y, m, 1);
+  const lastDay = new Date(y, m+1, 0);
+  const startDow = firstDay.getDay(); // 0=일
+  const daysInMonth = lastDay.getDate();
+  const today = new Date(); today.setHours(0,0,0,0);
+  const todayStr = ymdStr(today);
+  const forumStr = "2026-06-25";
+
+  // 데드라인 있는 날짜 set
+  const deadlineDates = new Set();
+  CL.forEach(t => { if (!t.done && t.deadline) deadlineDates.add(t.deadline); });
+  // To-do 있는 날짜 set
+  const todoDates = new Set(Object.keys(DAILY_TODOS).filter(d => DAILY_TODOS[d]?.length > 0));
+
+  const monthName = `${y}.${String(m+1).padStart(2,"0")}`;
+
+  let html = `
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+    <button onclick="calPrev()" style="background:none;border:none;color:rgba(255,255,255,.6);cursor:pointer;font-size:14px;padding:2px 6px;">◀</button>
+    <span style="font-size:12px;font-weight:700;color:rgba(255,255,255,.85);">${monthName}</span>
+    <button onclick="calNext()" style="background:none;border:none;color:rgba(255,255,255,.6);cursor:pointer;font-size:14px;padding:2px 6px;">▶</button>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;font-size:10px;text-align:center;">
+    ${["일","월","화","수","목","금","토"].map((d,i)=>`<div style="color:${i===0?'#FCA5A5':i===6?'#93C5FD':'rgba(255,255,255,.45)'};font-weight:700;padding:3px 0;">${d}</div>`).join("")}`;
+  // 시작 공백
+  for (let i = 0; i < startDow; i++) {
+    html += `<div></div>`;
+  }
+  for (let d = 1; d <= daysInMonth; d++) {
+    const ds = ymdStr(new Date(y, m, d));
+    const isToday = ds === todayStr;
+    const isForum = ds === forumStr;
+    const isSel = ds === selectedDate;
+    const hasDeadline = deadlineDates.has(ds);
+    const hasTodo = todoDates.has(ds);
+    const dow = (startDow + d - 1) % 7;
+    let bg = "transparent", color = "rgba(255,255,255,.8)", weight = "400";
+    if (dow === 0) color = "#FCA5A5";
+    if (dow === 6) color = "#93C5FD";
+    if (isSel) { bg = "rgba(96,165,250,.4)"; color = "#fff"; weight = "700"; }
+    else if (isToday) { bg = "rgba(96,165,250,.25)"; color = "#fff"; weight = "700"; }
+    else if (isForum) { bg = "rgba(251,191,36,.3)"; color = "#fbbf24"; weight = "700"; }
+    const dot = hasDeadline ? '<div style="position:absolute;bottom:1px;left:50%;transform:translateX(-50%);width:3px;height:3px;border-radius:50%;background:#ef4444;"></div>'
+              : hasTodo ? '<div style="position:absolute;bottom:1px;left:50%;transform:translateX(-50%);width:3px;height:3px;border-radius:50%;background:#34D399;"></div>' : "";
+    html += `<div onclick="selectCalDate('${ds}')" style="position:relative;padding:4px 0;border-radius:5px;cursor:pointer;background:${bg};color:${color};font-weight:${weight};font-size:10px;">${d}${dot}</div>`;
+  }
+  html += `</div>
+  <div style="display:flex;gap:6px;justify-content:space-between;margin-top:6px;font-size:9px;color:rgba(255,255,255,.4);">
+    <span><span style="color:#ef4444;">●</span> 마감</span>
+    <span><span style="color:#34D399;">●</span> To-do</span>
+    <span><span style="color:#fbbf24;">●</span> 포럼</span>
+  </div>`;
+  el.innerHTML = html;
+}
+
+window.calPrev = () => { calViewYM.m--; if (calViewYM.m < 0) { calViewYM.m = 11; calViewYM.y--; } renderSidebarCalendar(); };
+window.calNext = () => { calViewYM.m++; if (calViewYM.m > 11) { calViewYM.m = 0; calViewYM.y++; } renderSidebarCalendar(); };
+window.selectCalDate = (ds) => {
+  selectedDate = ds;
+  goPage("todo");
+};
+
+function pageTodo() {
+  if (!selectedDate) selectedDate = ymdStr(new Date());
+  const ds = selectedDate;
+  const [y,mo,d] = ds.split("-").map(Number);
+  const dateObj = new Date(y, mo-1, d);
+  const dowKr = ["일","월","화","수","목","금","토"][dateObj.getDay()];
+  const today = new Date(); today.setHours(0,0,0,0);
+  const diff = Math.round((dateObj - today) / 86400000);
+  let dLabel = "";
+  if (diff === 0) dLabel = "오늘";
+  else if (diff > 0) dLabel = `D-${diff}`;
+  else dLabel = `D+${Math.abs(diff)}`;
+
+  const todos = DAILY_TODOS[ds] || [];
+  const doneCnt = todos.filter(t=>t.done).length;
+  const progress = todos.length > 0 ? Math.round(doneCnt/todos.length*100) : 0;
+
+  // 해당 날짜의 마감 체크리스트
+  const dueChecklist = CL.filter(t => t.deadline === ds);
+
+  return `
+  <!-- 날짜 헤더 -->
+  <div class="hero" style="padding:18px 22px;">
+    <div>
+      <div style="font-size:10px;opacity:.5;font-weight:700;letter-spacing:.07em;margin-bottom:4px;">📅 DAILY TO-DO</div>
+      <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;">
+        <div style="font-size:36px;font-weight:900;line-height:1;letter-spacing:-2px;">${mo}월 ${d}일</div>
+        <div style="font-size:14px;opacity:.7;">(${dowKr})</div>
+        <div style="font-size:12px;background:rgba(255,255,255,.15);padding:3px 10px;border-radius:12px;">${dLabel}</div>
+      </div>
+      <div style="font-size:11px;opacity:.5;margin-top:6px;">${todos.length}개 항목 · ${doneCnt}개 완료 (${progress}%)</div>
+    </div>
+    <div style="display:flex;gap:6px;">
+      <button onclick="todoChangeDate(-1)" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);color:#fff;border-radius:8px;padding:8px 12px;cursor:pointer;font-size:13px;">◀ 어제</button>
+      <button onclick="todoToday()" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);color:#fff;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px;">오늘</button>
+      <button onclick="todoChangeDate(1)" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);color:#fff;border-radius:8px;padding:8px 12px;cursor:pointer;font-size:13px;">내일 ▶</button>
+    </div>
+  </div>
+
+  <!-- 진행률 바 -->
+  ${todos.length > 0 ? `
+  <div class="card" style="padding:12px 16px;margin-bottom:14px;">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <div style="font-size:24px;font-weight:800;color:${pc(progress)};">${progress}%</div>
+      <div style="flex:1;">${pctBar(progress, 8)}</div>
+      <div style="font-size:13px;color:#64748b;font-weight:600;">${doneCnt}/${todos.length}</div>
+    </div>
+  </div>` : ""}
+
+  <!-- 해당 날짜 체크리스트 마감 항목 (자동 표시) -->
+  ${dueChecklist.length > 0 ? `
+  <div class="card" style="border-left:3px solid #ef4444;background:#FFF5F5;">
+    <div style="font-size:13px;font-weight:700;color:#991b1b;margin-bottom:10px;">🚨 오늘 마감 체크리스트 (${dueChecklist.length}건)</div>
+    ${dueChecklist.map(t => `
+    <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #FECACA;">
+      <div onclick="toggleCheck(${t.id})" class="ck ${t.done?'on':''}">${t.done?'✓':''}</div>
+      <span style="font-size:13px;flex:1;color:${t.done?'#94a3b8':'#0B1D3F'};text-decoration:${t.done?'line-through':'none'};">${esc(t.task)}</span>
+      <span style="font-size:10px;background:#fff;color:#991b1b;padding:2px 8px;border-radius:8px;font-weight:600;">${esc(t.cat)}</span>
+    </div>`).join("")}
+  </div>` : ""}
+
+  <!-- To-do 추가 -->
+  <div class="card">
+    <div style="display:flex;gap:8px;align-items:center;">
+      <input type="text" id="todo-add-input" placeholder="할 일을 입력하세요..." onkeydown="if(event.key==='Enter')addTodo()" style="flex:1;">
+      <input type="time" id="todo-add-time" style="padding:6px 10px;border-radius:7px;border:1px solid #BFDBFE;font-size:13px;outline:none;width:110px;">
+      <button onclick="addTodo()" class="btn btn-p" style="white-space:nowrap;">➕ 추가</button>
+    </div>
+  </div>
+
+  <!-- To-do 목록 -->
+  <div class="card" style="padding:8px 12px;">
+    ${todos.length === 0 ? `
+    <div style="text-align:center;padding:30px 20px;color:#94a3b8;">
+      <div style="font-size:32px;margin-bottom:8px;">📝</div>
+      <div style="font-size:14px;font-weight:600;margin-bottom:4px;">이 날짜에 할 일이 없습니다</div>
+      <div style="font-size:12px;">위 입력창에 할 일을 추가해 보세요</div>
+    </div>` : todos.map((t, idx) => `
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 6px;border-bottom:${idx<todos.length-1?'1px solid #F1F5F9':'none'};background:${t.done?'#F0FDF4':'transparent'};border-radius:6px;">
+      <div onclick="toggleTodo('${ds}','${t.id}')" class="ck ${t.done?'on':''}">${t.done?'✓':''}</div>
+      ${t.time ? `<span style="font-size:11px;font-weight:700;color:#1B4FA0;background:#EFF6FF;padding:2px 8px;border-radius:8px;min-width:50px;text-align:center;">${esc(t.time)}</span>` : ""}
+      <span style="flex:1;font-size:13px;color:${t.done?'#94a3b8':'#1e293b'};text-decoration:${t.done?'line-through':'none'};line-height:1.5;cursor:pointer;" onclick="toggleTodo('${ds}','${t.id}')">${esc(t.task)}</span>
+      <button onclick="delTodo('${ds}','${t.id}')" style="background:none;border:none;cursor:pointer;font-size:14px;color:#fca5a5;padding:2px 6px;">🗑</button>
+    </div>`).join("")}
+  </div>`;
+}
+
+window.todoChangeDate = (delta) => {
+  if (!selectedDate) selectedDate = ymdStr(new Date());
+  const [y,m,d] = selectedDate.split("-").map(Number);
+  const dt = new Date(y, m-1, d);
+  dt.setDate(dt.getDate() + delta);
+  selectedDate = ymdStr(dt);
+  calViewYM = {y: dt.getFullYear(), m: dt.getMonth()};
+  draw();
+};
+window.todoToday = () => { selectedDate = ymdStr(new Date()); const n = new Date(); calViewYM = {y:n.getFullYear(), m:n.getMonth()}; draw(); };
+window.addTodo = () => {
+  const input = document.getElementById("todo-add-input");
+  const timeInput = document.getElementById("todo-add-time");
+  const task = input?.value.trim();
+  if (!task) return;
+  const time = timeInput?.value || "";
+  if (!selectedDate) selectedDate = ymdStr(new Date());
+  if (!DAILY_TODOS[selectedDate]) DAILY_TODOS[selectedDate] = [];
+  const id = "tt_" + Date.now() + "_" + Math.random().toString(36).slice(2,5);
+  DAILY_TODOS[selectedDate].push({id, task, done:false, time});
+  // 시간순 정렬
+  DAILY_TODOS[selectedDate].sort((a,b) => (a.time||"99:99").localeCompare(b.time||"99:99"));
+  scheduleSave();
+};
+window.toggleTodo = (ds, id) => {
+  if (!DAILY_TODOS[ds]) return;
+  DAILY_TODOS[ds] = DAILY_TODOS[ds].map(t => t.id===id ? {...t, done:!t.done} : t);
+  scheduleSave();
+};
+window.delTodo = (ds, id) => {
+  if (!DAILY_TODOS[ds]) return;
+  DAILY_TODOS[ds] = DAILY_TODOS[ds].filter(t => t.id !== id);
+  if (DAILY_TODOS[ds].length === 0) delete DAILY_TODOS[ds];
+  scheduleSave();
+};
+
+// ═══════════════════════════════════════════════════════════
+//   페이지 — 홈
+// ═══════════════════════════════════════════════════════════
 function pageHome() {
   const done=CL.filter(t=>t.done).length,total=CL.length,ov=pct(done,total);
   const conf=SP.filter(s=>s.status==="confirmed").length;
@@ -2359,16 +2574,18 @@ window.addEventListener("DOMContentLoaded", () => {
     <style>@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}</style>`;
   // 파일에 내장된 설정으로 자동 연결
   initFirebase(FIREBASE_CONFIG);
+  // 사이드바 캘린더 즉시 렌더
+  renderSidebarCalendar();
 });
 </script>
 
 <div id="bottom-nav">
   <div class="bn-items">
     <button class="bn-item active" onclick="goPage('home')" data-bn="home"><span class="bn-icon">🏠</span><span class="bn-label">홈</span></button>
+    <button class="bn-item" onclick="goPage('todo')" data-bn="todo"><span class="bn-icon">📅</span><span class="bn-label">To-do</span></button>
     <button class="bn-item" onclick="goPage('checklist')" data-bn="checklist"><span class="bn-icon">✅</span><span class="bn-label">준비</span></button>
     <button class="bn-item" onclick="goPage('agenda')" data-bn="agenda"><span class="bn-icon">📋</span><span class="bn-label">Agenda</span></button>
     <button class="bn-item" onclick="goPage('speakers')" data-bn="speakers"><span class="bn-icon">👥</span><span class="bn-label">참석자</span></button>
-    <button class="bn-item" onclick="goPage('budget')" data-bn="budget"><span class="bn-icon">📊</span><span class="bn-label">예산</span></button>
     <button class="bn-item" onclick="openSidebar()" data-bn="more"><span class="bn-icon">≡</span><span class="bn-label">더보기</span></button>
   </div>
 </div>
