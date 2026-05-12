@@ -1928,6 +1928,22 @@ function pageBudget() {
 
     html += `
     <div class="card" style="margin-bottom:10px;border-left:4px solid ${item.color};padding:0;">
+      ${budgetEditId === item.id ? `
+      <div style="padding:14px 16px;background:#F0FDF4;">
+        <div style="font-size:11px;font-weight:700;color:#15803d;margin-bottom:8px;">📝 예산 항목 편집</div>
+        <div style="display:grid;grid-template-columns:1fr 180px auto auto;gap:8px;align-items:center;">
+          <div>
+            <label style="font-size:10px;color:#64748b;font-weight:600;">항목 이름</label>
+            <input id="be-label" value="${esc(item.label)}" style="width:100%;padding:6px 10px;border-radius:7px;border:1.5px solid #BBF7D0;font-size:13px;outline:none;">
+          </div>
+          <div>
+            <label style="font-size:10px;color:#64748b;font-weight:600;">예산 (원)</label>
+            <input id="be-budget" type="number" value="${item.budget}" style="width:100%;padding:6px 10px;border-radius:7px;border:1.5px solid #BBF7D0;font-size:13px;outline:none;text-align:right;">
+          </div>
+          <button onclick="saveBudgetItem('${item.id}')" style="margin-top:14px;padding:6px 16px;border-radius:8px;background:#0d9488;color:#fff;border:none;cursor:pointer;font-size:13px;font-weight:700;">저장</button>
+          <button onclick="window._budgetEditId=null;draw()" style="margin-top:14px;padding:6px 12px;border-radius:8px;background:#F1F5F9;color:#64748b;border:none;cursor:pointer;font-size:13px;">취소</button>
+        </div>
+      </div>` : `
       <div style="padding:14px 16px;cursor:pointer;display:flex;align-items:center;gap:12px;" onclick="window._budgetOpenBlocks=window._budgetOpenBlocks||{};window._budgetOpenBlocks['${item.id}']=!${isOpen};draw();">
         <div style="flex:1;min-width:0;">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
@@ -1938,7 +1954,7 @@ function pageBudget() {
           <div style="height:8px;background:#F1F5F9;border-radius:99px;overflow:hidden;margin-bottom:4px;">
             <div style="height:100%;width:${p}%;background:${over?"linear-gradient(90deg,#f87171,#ef4444)":item.color};border-radius:99px;"></div>
           </div>
-          <div style="display:flex;gap:12px;font-size:11px;">
+          <div style="display:flex;gap:12px;font-size:11px;flex-wrap:wrap;">
             <span style="color:#94a3b8;">예산 <strong style="color:#475569;">${krw(item.budget)}</strong></span>
             <span style="color:#94a3b8;">실지출 <strong style="color:${over?"#ef4444":"#0d9488"};">${krw(item.actual)}</strong></span>
             <span style="color:#94a3b8;">잔여 <strong style="color:${over?"#ef4444":"#16a34a"};">${krw(item.budget-item.actual)}</strong></span>
@@ -1946,11 +1962,23 @@ function pageBudget() {
           </div>
         </div>
         <div style="display:flex;align-items:center;gap:4px;flex-shrink:0;" onclick="event.stopPropagation();">
-          <button onclick="editBudgetItem('${item.id}')" style="background:none;border:none;cursor:pointer;font-size:14px;color:#94a3b8;">✏️</button>
-          <button onclick="deleteBudgetItem('${item.id}')" style="background:none;border:none;cursor:pointer;font-size:14px;color:#fca5a5;">🗑</button>
+          <button onclick="editBudgetItem('${item.id}')" style="background:none;border:none;cursor:pointer;font-size:14px;color:#94a3b8;padding:4px;" title="항목 편집">✏️</button>
+          <button onclick="toggleBudgetItemAttach('${item.id}')" style="background:none;border:none;cursor:pointer;font-size:14px;padding:4px;color:${(item.attachments||[]).length>0?'#0d9488':'#94a3b8'};" title="파일 첨부">📎${(item.attachments||[]).length>0?`<sup style="font-size:10px;font-weight:700;color:#0d9488;">${(item.attachments||[]).length}</sup>`:""}</button>
+          <button onclick="deleteBudgetItem('${item.id}')" style="background:none;border:none;cursor:pointer;font-size:14px;color:#fca5a5;padding:4px;" title="항목 삭제">🗑</button>
           <span style="font-size:13px;color:#94a3b8;">${isOpen?"▲":"▼"}</span>
         </div>
-      </div>
+      </div>`}
+      ${window._budgetItemAttachId === item.id ? `
+      <div style="margin:0 16px 12px;padding:12px 14px;background:#F0FDFA;border-radius:9px;border:1px solid #99F6E4;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+          <span style="font-size:12px;font-weight:700;color:#0d9488;">📎 ${esc(item.label)} 첨부 파일 (계약서·견적서·정산자료 등)</span>
+          <label style="padding:4px 12px;border-radius:12px;cursor:pointer;font-size:11px;font-weight:700;background:#0d9488;color:#fff;display:inline-flex;align-items:center;gap:4px;">＋ 파일 추가<input type="file" multiple style="display:none;" onchange="attachToBudgetItem('${item.id}', event)"></label>
+        </div>
+        ${(item.attachments||[]).length===0
+          ? `<div style="font-size:12px;color:#94a3b8;text-align:center;padding:6px 0;">첨부된 파일이 없습니다</div>`
+          : (item.attachments||[]).map(a=>`<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #CCFBF1;"><span style="font-size:16px;">${fileIcon(a.type)}</span><span style="flex:1;font-size:12px;color:#0B1D3F;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(a.name)}</span><span style="font-size:10px;color:#94a3b8;">${fileSize(a.size)}</span><span style="font-size:10px;color:#94a3b8;">${esc(a.date||"")}</span><button onclick="downloadBudgetItemAttach('${a.id}')" style="background:none;border:none;cursor:pointer;font-size:12px;color:#2563EB;font-weight:600;padding:2px 4px;">⬇️</button><button onclick="removeBudgetItemAttach('${item.id}','${a.id}')" style="background:none;border:none;cursor:pointer;font-size:12px;color:#ef4444;padding:2px 4px;">✕</button></div>`).join("")
+        }
+      </div>` : ""}
       ${isOpen?`
       <div style="padding:0 16px 14px;border-top:1px solid #F1F5F9;">
         ${isTravel?`
@@ -2431,6 +2459,52 @@ window.saveBudgetItem = id => {
   window._budgetEditId=null; scheduleSave();
 };
 window.deleteBudgetItem = id => { BUDGET_ITEMS=BUDGET_ITEMS.filter(i=>i.id!==id); window._budgetEditId=null; scheduleSave(); };
+
+// ── 예산 항목별 파일 첨부 ─────────────────────────────
+window.toggleBudgetItemAttach = id => {
+  window._budgetItemAttachId = (window._budgetItemAttachId === id) ? null : id;
+  window._budgetEditId = null;
+  draw();
+};
+
+window.attachToBudgetItem = (id, event) => {
+  const files = Array.from(event.target.files);
+  if(!files.length) return;
+  let done = 0;
+  files.forEach(file => {
+    if(file.size > 4.5*1024*1024) { alert(file.name+" 파일이 너무 큽니다 (최대 4.5MB)"); done++; return; }
+    const reader = new FileReader();
+    reader.onload = e => {
+      const aid = "ba_" + Date.now() + "_" + Math.random().toString(36).slice(2,6);
+      const now = new Date().toLocaleDateString("ko-KR",{month:"numeric",day:"numeric"});
+      localStorage.setItem("gvf2026_bfa_"+aid, e.target.result);
+      BUDGET_ITEMS = BUDGET_ITEMS.map(item => item.id === id ? {
+        ...item,
+        attachments: [...(item.attachments||[]), {id:aid, name:file.name, type:file.type, size:file.size, date:now}]
+      } : item);
+      done++;
+      if(done === files.length) { scheduleSave(); window._budgetItemAttachId = id; draw(); }
+    };
+    reader.readAsDataURL(file);
+  });
+  event.target.value = "";
+};
+
+window.downloadBudgetItemAttach = aid => {
+  const data = localStorage.getItem("gvf2026_bfa_"+aid);
+  if(!data) return alert("파일을 찾을 수 없습니다.\n(다른 기기에서 첨부된 파일은 그 기기에서만 다운로드 가능합니다.)");
+  let name = "파일";
+  BUDGET_ITEMS.forEach(item => (item.attachments||[]).forEach(a => { if(a.id===aid) name = a.name; }));
+  const a = document.createElement("a"); a.href=data; a.download=name; a.click();
+};
+
+window.removeBudgetItemAttach = (id, aid) => {
+  localStorage.removeItem("gvf2026_bfa_"+aid);
+  BUDGET_ITEMS = BUDGET_ITEMS.map(item => item.id === id ? {
+    ...item, attachments:(item.attachments||[]).filter(a=>a.id!==aid)
+  } : item);
+  scheduleSave(); window._budgetItemAttachId = id; draw();
+};
 window.addBudgetItem = () => { const newId="b"+Date.now(); BUDGET_ITEMS.push({id:newId,label:"새 항목",budget:0,actual:0,color:"#64748b"}); window._budgetEditId=newId; scheduleSave(); };
 window.editTravelRow = id => { window._travelEditId=id; window._budgetEditId=null; draw(); };
 window.saveTravelRow = id => {
