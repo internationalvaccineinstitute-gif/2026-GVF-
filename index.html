@@ -1964,7 +1964,30 @@ function pageBudget() {
         ${entries.length>0?`
         <table style="width:100%;border-collapse:collapse;margin-top:10px;margin-bottom:8px;">
           <thead><tr style="background:#FAFBFF;"><th style="padding:6px 10px;font-size:11px;color:#64748b;font-weight:700;border-bottom:1px solid #E2E8F0;text-align:left;">내역</th><th style="padding:6px 10px;font-size:11px;color:#64748b;font-weight:700;border-bottom:1px solid #E2E8F0;text-align:right;">금액</th><th style="padding:6px 10px;font-size:11px;color:#64748b;font-weight:700;border-bottom:1px solid #E2E8F0;text-align:center;">날짜</th><th style="padding:6px 10px;font-size:11px;color:#64748b;font-weight:700;border-bottom:1px solid #E2E8F0;text-align:center;">지급</th><th style="padding:6px 10px;font-size:11px;border-bottom:1px solid #E2E8F0;"></th></tr></thead>
-          <tbody>${entries.map(e=>`<tr style="border-bottom:1px solid #F8FAFC;"><td style="padding:7px 10px;font-size:13px;">${esc(e.desc)}</td><td style="padding:7px 10px;font-size:13px;font-weight:700;color:#1B4FA0;text-align:right;">${krw(e.amount)}</td><td style="padding:7px 10px;font-size:11px;color:#94a3b8;text-align:center;">${esc(e.date)}</td><td style="padding:7px 10px;text-align:center;"><span onclick="toggleEntryPaid('${e.id}')" style="cursor:pointer;padding:2px 8px;border-radius:9px;font-size:11px;font-weight:700;background:${e.paid?"#dcfce7":"#FEF3C7"};color:${e.paid?"#15803d":"#92400e"};">${e.paid?"지급완료":"미지급"}</span></td><td style="padding:7px 6px;white-space:nowrap;"><button onclick="editEntry('${e.id}')" style="background:none;border:none;cursor:pointer;font-size:12px;color:#94a3b8;">✏️</button><button onclick="deleteEntry('${e.id}')" style="background:none;border:none;cursor:pointer;font-size:12px;color:#fca5a5;">🗑</button></td></tr>`).join("")}</tbody>
+          <tbody>${entries.map(e=>{
+            if (window._entryEditId === e.id) {
+              return `<tr style="background:#F0FDF4;">
+                <td style="padding:5px 6px;"><input id="ee-desc" value="${esc(e.desc)}" style="width:100%;padding:5px 8px;border-radius:6px;border:1.5px solid #BBF7D0;font-size:12px;outline:none;"></td>
+                <td style="padding:5px 6px;"><input id="ee-amount" type="number" value="${e.amount}" style="width:110px;padding:5px 8px;border-radius:6px;border:1.5px solid #BBF7D0;font-size:12px;outline:none;text-align:right;"></td>
+                <td style="padding:5px 6px;"><input id="ee-date" value="${esc(e.date)}" style="width:80px;padding:5px 8px;border-radius:6px;border:1.5px solid #BBF7D0;font-size:12px;outline:none;"></td>
+                <td style="padding:5px 6px;text-align:center;"><label style="cursor:pointer;display:inline-flex;align-items:center;gap:4px;font-size:11px;"><input type="checkbox" id="ee-paid" ${e.paid?"checked":""}> 지급</label></td>
+                <td style="padding:5px 6px;white-space:nowrap;">
+                  <button onclick="saveEntry('${e.id}')" style="padding:4px 10px;border-radius:6px;background:#0d9488;color:#fff;border:none;cursor:pointer;font-size:11px;font-weight:700;margin-right:3px;">저장</button>
+                  <button onclick="window._entryEditId=null;draw()" style="padding:4px 8px;border-radius:6px;background:#F1F5F9;color:#64748b;border:none;cursor:pointer;font-size:11px;">취소</button>
+                </td>
+              </tr>`;
+            }
+            return `<tr style="border-bottom:1px solid #F8FAFC;"><td style="padding:7px 10px;font-size:13px;">${esc(e.desc)}</td><td style="padding:7px 10px;font-size:13px;font-weight:700;color:#1B4FA0;text-align:right;">${krw(e.amount)}</td><td style="padding:7px 10px;font-size:11px;color:#94a3b8;text-align:center;">${esc(e.date)}</td><td style="padding:7px 10px;text-align:center;"><span onclick="toggleEntryPaid('${e.id}')" style="cursor:pointer;padding:2px 8px;border-radius:9px;font-size:11px;font-weight:700;background:${e.paid?"#dcfce7":"#FEF3C7"};color:${e.paid?"#15803d":"#92400e"};">${e.paid?"지급완료":"미지급"}</span></td><td style="padding:7px 6px;white-space:nowrap;"><button onclick="editEntry('${e.id}')" style="background:none;border:none;cursor:pointer;font-size:13px;color:#94a3b8;padding:2px 4px;" title="수정">✏️</button><button onclick="toggleEntryAttach('${e.id}')" style="background:none;border:none;cursor:pointer;font-size:13px;padding:2px 4px;color:${(e.attachments||[]).length>0?'#0d9488':'#94a3b8'};" title="파일 첨부">📎${(e.attachments||[]).length>0?`<sup style="font-size:9px;font-weight:700;color:#0d9488;">${(e.attachments||[]).length}</sup>`:""}</button><button onclick="deleteEntry('${e.id}')" style="background:none;border:none;cursor:pointer;font-size:13px;color:#fca5a5;padding:2px 4px;" title="삭제">🗑</button></td></tr>
+            ${window._entryAttachId === e.id ? `<tr><td colspan="5" style="padding:0;">
+              <div style="margin:4px 8px;padding:10px 12px;background:#F0FDFA;border-radius:8px;border:1px solid #99F6E4;">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+                  <span style="font-size:11px;font-weight:700;color:#0d9488;">📎 첨부 파일 (영수증·계약서 등)</span>
+                  <label style="padding:3px 10px;border-radius:10px;cursor:pointer;font-size:11px;font-weight:700;background:#0d9488;color:#fff;display:inline-flex;align-items:center;gap:4px;">＋ 추가<input type="file" multiple style="display:none;" onchange="attachToEntry('${e.id}', event)"></label>
+                </div>
+                ${(e.attachments||[]).length===0?`<div style="font-size:11px;color:#94a3b8;text-align:center;padding:4px;">첨부된 파일이 없습니다</div>`:(e.attachments||[]).map(a=>`<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid #CCFBF1;"><span style="font-size:14px;">${fileIcon(a.type)}</span><span style="flex:1;font-size:11px;color:#0B1D3F;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(a.name)}</span><span style="font-size:10px;color:#94a3b8;">${fileSize(a.size)}</span><button onclick="downloadEntryAttach('${a.id}')" style="background:none;border:none;cursor:pointer;font-size:11px;color:#2563EB;font-weight:600;padding:1px 4px;">⬇️</button><button onclick="removeEntryAttach('${e.id}','${a.id}')" style="background:none;border:none;cursor:pointer;font-size:11px;color:#ef4444;padding:1px 4px;">✕</button></div>`).join("")}
+              </div>
+            </td></tr>` : ""}`;
+          }).join("")}</tbody>
         </table>`:`<div style="text-align:center;padding:16px 0;font-size:13px;color:#94a3b8;margin-top:10px;">지출 내역이 없습니다</div>`}
         <div id="add-entry-${item.id}" style="display:none;background:#F8FAFC;border-radius:9px;padding:10px 12px;border:1px dashed #BFDBFE;margin-bottom:8px;margin-top:8px;">
           <div style="display:grid;grid-template-columns:1fr 120px 90px auto auto auto;gap:6px;align-items:center;">
@@ -2436,6 +2459,52 @@ window.saveEntry = id => {
 };
 window.deleteEntry = id => { BUDGET_ENTRIES=BUDGET_ENTRIES.filter(e=>e.id!==id); scheduleSave(); };
 window.toggleEntryPaid = id => { BUDGET_ENTRIES=BUDGET_ENTRIES.map(e=>e.id===id?{...e,paid:!e.paid}:e); scheduleSave(); };
+
+// ── 예산 내역별 파일 첨부 ─────────────────────────────
+window.toggleEntryAttach = id => {
+  window._entryAttachId = (window._entryAttachId === id) ? null : id;
+  window._entryEditId = null;
+  draw();
+};
+
+window.attachToEntry = (id, event) => {
+  const files = Array.from(event.target.files);
+  if(!files.length) return;
+  let done = 0;
+  files.forEach(file => {
+    if(file.size > 4.5*1024*1024) { alert(file.name+" 파일이 너무 큽니다 (최대 4.5MB)"); done++; return; }
+    const reader = new FileReader();
+    reader.onload = e => {
+      const aid = "ea_" + Date.now() + "_" + Math.random().toString(36).slice(2,6);
+      const now = new Date().toLocaleDateString("ko-KR",{month:"numeric",day:"numeric"});
+      localStorage.setItem("gvf2026_efa_"+aid, e.target.result);
+      BUDGET_ENTRIES = BUDGET_ENTRIES.map(en => en.id === id ? {
+        ...en,
+        attachments: [...(en.attachments||[]), {id:aid, name:file.name, type:file.type, size:file.size, date:now}]
+      } : en);
+      done++;
+      if(done === files.length) { scheduleSave(); window._entryAttachId = id; draw(); }
+    };
+    reader.readAsDataURL(file);
+  });
+  event.target.value = "";
+};
+
+window.downloadEntryAttach = aid => {
+  const data = localStorage.getItem("gvf2026_efa_"+aid);
+  if(!data) return alert("파일을 찾을 수 없습니다.\n(다른 기기에서 첨부된 파일은 그 기기에서만 다운로드 가능합니다.)");
+  let name = "파일";
+  BUDGET_ENTRIES.forEach(en => (en.attachments||[]).forEach(a => { if(a.id===aid) name = a.name; }));
+  const a = document.createElement("a"); a.href=data; a.download=name; a.click();
+};
+
+window.removeEntryAttach = (id, aid) => {
+  localStorage.removeItem("gvf2026_efa_"+aid);
+  BUDGET_ENTRIES = BUDGET_ENTRIES.map(en => en.id === id ? {
+    ...en, attachments:(en.attachments||[]).filter(a=>a.id!==aid)
+  } : en);
+  scheduleSave(); window._entryAttachId = id; draw();
+};
 window.cancelClEdit = () => { clEditId=null; draw(); };
 window.saveClEdit = id => {
   const inp=document.getElementById("cl-edit-input");
