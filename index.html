@@ -1892,6 +1892,15 @@ function pageBudget() {
   const openBlocks   = window._budgetOpenBlocks||(window._budgetOpenBlocks={});
 
   let html = `
+  <div class="card" style="padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:#FAFCFF;border:1px solid #BFDBFE;">
+    <div style="flex:1;min-width:200px;">
+      <div style="font-size:13px;font-weight:700;color:#0B1D3F;">📊 예산 관리</div>
+      <div style="font-size:11px;color:#64748b;margin-top:2px;line-height:1.5;">원본 데이터 기반 · 변동사항 있을 때마다 직접 편집해 업데이트하세요</div>
+    </div>
+    <button onclick="resetBudget()" style="padding:6px 14px;border-radius:20px;font-size:12px;font-weight:600;background:#FEF2F2;color:#ef4444;border:1px solid #FECACA;cursor:pointer;white-space:nowrap;">
+      🔄 원본 데이터로 초기화
+    </button>
+  </div>
   <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;">
     ${[{l:"총 예산",v:krw(totalBudget),c:"#1B4FA0"},{l:"실지출 합계",v:krw(totalActual),c:totalActual>totalBudget?"#ef4444":"#0d9488"},{l:"잔여 예산",v:krw(remaining),c:remaining<0?"#ef4444":"#16a34a"},{l:"집행률",v:usedPct+"%",c:usedPct>90?"#ef4444":usedPct>70?"#f59e0b":"#1B4FA0"}]
       .map(({l,v,c})=>`<div class="kpi"><div style="font-size:11px;color:#64748b;font-weight:700;margin-bottom:5px;">${l}</div><div style="font-size:20px;font-weight:800;color:${c};">${v}</div></div>`).join("")}
@@ -2567,7 +2576,30 @@ window.doReport = () => {
   SP.filter(s=>s.status==="confirmed").forEach(s=>{t+=`  · ${s.name} (${s.org})\n`;});
   const blob=new Blob([t],{type:"text/plain;charset=utf-8;"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download="2026_GVF_현황보고서.txt";a.click();URL.revokeObjectURL(url);
 };
-window.resetData = () => { if(confirm("모든 데이터를 초기값으로 되돌립니다. 계속하시겠습니까?")){CL=DEFAULT_CL.map(t=>({...t}));SP=DEFAULT_SP.map(s=>({...s}));scheduleSave();} };
+window.resetData = () => {
+  if(confirm("⚠️ 모든 데이터(체크리스트·연사·예산)를 초기값으로 되돌립니다. 계속하시겠습니까?")) {
+    CL = DEFAULT_CL.map(t=>({...t}));
+    SP = DEFAULT_SP.map(s=>({...s}));
+    BUDGET_ITEMS = DEFAULT_BUDGET_ITEMS.map(x=>({...x}));
+    TRAVEL_DETAIL = DEFAULT_TRAVEL_DETAIL.map(x=>({...x}));
+    BUDGET_ENTRIES = [];
+    scheduleSave();
+  }
+};
+
+window.resetBudget = () => {
+  if(confirm("⚠️ 예산 데이터를 원본으로 초기화합니다.\n\n• 예산 항목 (행사장, 사례비, 자료집 등) → 원본 복원\n• 항공·숙박 명단 → 원본 5명 복원\n• 입력한 모든 지출 내역 → 삭제\n\n계속하시겠습니까?")) {
+    BUDGET_ITEMS = DEFAULT_BUDGET_ITEMS.map(x=>({...x}));
+    TRAVEL_DETAIL = DEFAULT_TRAVEL_DETAIL.map(x=>({...x}));
+    BUDGET_ENTRIES = [];
+    window._budgetEditId = null;
+    window._travelEditId = null;
+    window._entryEditId = null;
+    window._entryAttachId = null;
+    scheduleSave();
+    alert("✅ 예산 데이터가 원본으로 초기화되었습니다.\n이제 변경사항이 있을 때마다 직접 편집해 업데이트하세요.");
+  }
+};
 window.toggleFbSetup = () => { const p=document.getElementById("fb-setup-panel");if(p)p.style.display=p.style.display==="none"?"block":"none"; };
 
 // firebaseConfig 붙여넣기 파서 — 모든 형식 지원
