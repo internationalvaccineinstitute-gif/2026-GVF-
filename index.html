@@ -960,7 +960,7 @@ const DEFAULT_AGENDA_HTML = `
 <div class="ag-row special"><span class="ag-time">15:40–15:45</span><span class="ag-prog">☕ Break</span><span class="ag-spk"></span></div>
 <div class="ag-row"><span class="ag-time">15:45–16:10</span><span class="ag-prog">MiniPanel: Regional Cooperation — cross-border partnerships and data sharing in Asia-Pacific</span><span class="ag-spk"><strong>TBC</strong> <em>(IVI)</em><br><strong>Eun Hwa Choi</strong> <em>(Korea)</em><br><strong>Nakorn Premsri</strong> <em>(Thailand)</em><br><strong>Norihisa Yamamoto</strong> <em>(Japan)</em><br><strong>Kiat Ruxrungtham</strong> <em>(Thailand)</em><br><strong>Hee Soo Kim</strong> <em>(Moderna Korea)</em></span></div>
 <div class="ag-section-label">Closing Keynote Lecture &amp; Q&amp;A &nbsp;·&nbsp; <span style="font-weight:600;color:#475569;text-transform:none;letter-spacing:0;">Chaired by TBC</span></div>
-<div class="ag-row keynote"><span class="ag-time">16:10–16:50</span><span class="ag-prog">Immunology at the Frontiers: Designing Next-Generation Vaccines for Global Equity and Aging Populations</span><span class="ag-spk"><strong>Bali Pulendran</strong><br><em>Violetta L. Horton Professor, Stanford University</em></span></div>
+<div class="ag-row"><span class="ag-time">16:10–16:50</span><span class="ag-prog">Immunology at the Frontiers: Designing Next-Generation Vaccines for Global Equity and Aging Populations</span><span class="ag-spk"><strong>Bali Pulendran</strong><br><em>Violetta L. Horton Professor, Stanford University</em></span></div>
 <div class="ag-row"><span class="ag-time">16:50–16:57</span><span class="ag-prog">Concluding Words &amp; Closing</span><span class="ag-spk"><strong>TBC</strong><br><em>Korea Disease Control and Prevention Agency</em></span></div>
 <div class="ag-row"><span class="ag-time">16:57–17:04</span><span class="ag-prog">Concluding Words &amp; Closing</span><span class="ag-spk"><strong>Jerome H. Kim</strong><br><em>Director General, International Vaccine Institute</em></span></div>
 <div class="ag-row"><span class="ag-time">17:04–17:10</span><span class="ag-prog">Concluding Words &amp; Closing</span><span class="ag-spk"><strong>Hoon Sang Lee</strong><br><em>CSO, RIGHT Foundation</em></span></div>
@@ -1440,7 +1440,7 @@ function buildAgendaView(html, fileName) {
       const checkText = title + " " + (speakersHtml || "");
       const isBreak = /^(\s*)(break|lunch|reception|coffee|registration|group\s*photo|cocktail|휴식)/i.test(title.trim())
                    || /break|lunch|reception|coffee\s*break|group\s*photo|registration|cocktail/i.test(title);
-      const isKey  = /keynote|pulendran|기조강연|closing\s+keynote/i.test(checkText);
+      const isKey  = false; // keynote 자동 스타일 비활성화 (사용자가 직접 편집 모드에서 지정)
 
       const cls = `ag-row${isBreak?" special":isKey?" keynote":""}`;
       outBuffer.push({
