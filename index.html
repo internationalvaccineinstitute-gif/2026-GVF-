@@ -2080,7 +2080,8 @@ function pageBudget() {
       ${isOpen?`
       <div style="padding:0 16px 14px;border-top:1px solid #F1F5F9;">
         ${isTravel?`
-        <div style="display:flex;justify-content:flex-end;margin:10px 0 8px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin:10px 0 8px;gap:8px;flex-wrap:wrap;">
+          <button onclick="restoreDefaultTravelers()" style="padding:5px 12px;border-radius:14px;font-size:11px;font-weight:600;background:#FAFCFF;color:#1B4FA0;border:1px solid #BFDBFE;cursor:pointer;">🔄 기본 연사 5명 복구</button>
           <button onclick="addTravelRow()" style="padding:5px 14px;border-radius:14px;font-size:12px;font-weight:700;background:linear-gradient(135deg,#1B4FA0,#2563EB);color:#fff;border:none;cursor:pointer;">＋ 연사 추가</button>
         </div>
         <div style="overflow-x:auto;">
@@ -2090,7 +2091,17 @@ function pageBudget() {
             ${TRAVEL_DETAIL.map(t=>{
               const sub = t.flight+t.hotel+t.trans+t.misc;
               if(trvEditId===t.id) return `<tr style="background:#F0FDF4;"><td colspan="10" style="padding:6px 8px;"><div style="display:grid;grid-template-columns:1fr 1fr 1fr 90px 90px 80px 80px auto auto;gap:5px;"><input id="te-name" value="${esc(t.name)}" style="padding:5px 8px;border-radius:6px;border:1.5px solid #BBF7D0;font-size:12px;outline:none;"><input id="te-org" value="${esc(t.org)}" style="padding:5px 8px;border-radius:6px;border:1.5px solid #BBF7D0;font-size:12px;outline:none;"><input id="te-from" value="${esc(t.from)}" style="padding:5px 8px;border-radius:6px;border:1.5px solid #BBF7D0;font-size:12px;outline:none;"><input id="te-flight" type="number" value="${t.flight}" style="padding:5px 8px;border-radius:6px;border:1.5px solid #BBF7D0;font-size:12px;outline:none;"><input id="te-hotel" type="number" value="${t.hotel}" style="padding:5px 8px;border-radius:6px;border:1.5px solid #BBF7D0;font-size:12px;outline:none;"><input id="te-trans" type="number" value="${t.trans}" style="padding:5px 8px;border-radius:6px;border:1.5px solid #BBF7D0;font-size:12px;outline:none;"><input id="te-misc" type="number" value="${t.misc}" style="padding:5px 8px;border-radius:6px;border:1.5px solid #BBF7D0;font-size:12px;outline:none;"><button onclick="saveTravelRow('${t.id}')" style="padding:5px 12px;border-radius:6px;background:#0d9488;color:#fff;border:none;cursor:pointer;font-size:12px;font-weight:700;">저장</button><button onclick="deleteTravelRow('${t.id}')" style="padding:5px 8px;border-radius:6px;background:#FEF2F2;color:#ef4444;border:1px solid #FECACA;cursor:pointer;font-size:12px;">🗑</button></div></td></tr>`;
-              return `<tr style="border-bottom:1px solid #F1F5F9;"><td style="padding:8px 10px;font-weight:700;font-size:12px;">${esc(t.name)}</td><td style="padding:8px 10px;color:#64748b;font-size:11px;">${esc(t.org)}</td><td style="padding:8px 10px;color:#64748b;font-size:11px;">${esc(t.from)}</td><td style="padding:8px 10px;font-size:12px;">${krw(t.flight)}</td><td style="padding:8px 10px;font-size:12px;">${krw(t.hotel)}</td><td style="padding:8px 10px;font-size:12px;">${krw(t.trans)}</td><td style="padding:8px 10px;font-size:12px;">${krw(t.misc)}</td><td style="padding:8px 10px;font-weight:700;color:#1B4FA0;font-size:12px;">${krw(sub)}</td><td style="padding:8px 10px;"><span onclick="toggleTravelOk('${t.id}')" style="cursor:pointer;padding:3px 9px;border-radius:10px;font-size:11px;font-weight:700;background:${t.ok?"#dcfce7":"#fef3c7"};color:${t.ok?"#15803d":"#92400e"};">${t.ok?"확정":"미확인"}</span></td><td style="padding:8px 6px;white-space:nowrap;"><button onclick="editTravelRow('${t.id}')" style="background:none;border:none;cursor:pointer;font-size:13px;color:#94a3b8;">✏️</button><button onclick="deleteTravelRow('${t.id}')" style="background:none;border:none;cursor:pointer;font-size:13px;color:#fca5a5;">🗑</button></td></tr>`;
+              return `<tr style="border-bottom:1px solid #F1F5F9;"><td style="padding:8px 10px;font-weight:700;font-size:12px;">${esc(t.name)}</td><td style="padding:8px 10px;color:#64748b;font-size:11px;">${esc(t.org)}</td><td style="padding:8px 10px;color:#64748b;font-size:11px;">${esc(t.from)}</td><td style="padding:8px 10px;font-size:12px;">${krw(t.flight)}</td><td style="padding:8px 10px;font-size:12px;">${krw(t.hotel)}</td><td style="padding:8px 10px;font-size:12px;">${krw(t.trans)}</td><td style="padding:8px 10px;font-size:12px;">${krw(t.misc)}</td><td style="padding:8px 10px;font-weight:700;color:#1B4FA0;font-size:12px;">${krw(sub)}</td><td style="padding:8px 10px;"><span onclick="toggleTravelOk('${t.id}')" style="cursor:pointer;padding:3px 9px;border-radius:10px;font-size:11px;font-weight:700;background:${t.ok?"#dcfce7":"#fef3c7"};color:${t.ok?"#15803d":"#92400e"};">${t.ok?"확정":"미확인"}</span></td><td style="padding:8px 6px;white-space:nowrap;"><button onclick="editTravelRow('${t.id}')" title="편집" style="background:none;border:none;cursor:pointer;font-size:13px;color:#94a3b8;padding:2px 4px;">✏️</button><button onclick="toggleTravelAttach('${t.id}')" title="파일 첨부" style="background:none;border:none;cursor:pointer;font-size:13px;padding:2px 4px;color:${(t.attachments||[]).length>0?'#0d9488':'#94a3b8'};">📎${(t.attachments||[]).length>0?`<sup style="font-size:9px;font-weight:700;color:#0d9488;">${(t.attachments||[]).length}</sup>`:""}</button><button onclick="deleteTravelRow('${t.id}')" title="삭제" style="background:none;border:none;cursor:pointer;font-size:13px;color:#fca5a5;padding:2px 4px;">🗑</button></td></tr>
+              ${window._travelAttachId === t.id ? `<tr><td colspan="10" style="padding:0;"><div style="margin:4px 8px;padding:10px 12px;background:#F0FDFA;border-radius:8px;border:1px solid #99F6E4;">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+                  <span style="font-size:11px;font-weight:700;color:#0d9488;">📎 ${esc(t.name)} 첨부 (E-Ticket·호텔 예약·여권 사본 등)</span>
+                  <label style="padding:3px 10px;border-radius:10px;cursor:pointer;font-size:11px;font-weight:700;background:#0d9488;color:#fff;display:inline-flex;align-items:center;gap:4px;">＋ 추가<input type="file" multiple style="display:none;" onchange="attachToTravel('${t.id}', event)"></label>
+                </div>
+                ${(t.attachments||[]).length===0
+                  ? `<div style="font-size:11px;color:#94a3b8;text-align:center;padding:4px;">첨부된 파일이 없습니다</div>`
+                  : (t.attachments||[]).map(a=>`<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid #CCFBF1;"><span style="font-size:14px;">${fileIcon(a.type)}</span><span style="flex:1;font-size:11px;color:#0B1D3F;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(a.name)}</span><span style="font-size:10px;color:#94a3b8;">${fileSize(a.size)}</span><button onclick="downloadTravelAttach('${a.id}')" style="background:none;border:none;cursor:pointer;font-size:11px;color:#2563EB;font-weight:600;padding:1px 4px;">⬇️</button><button onclick="removeTravelAttach('${t.id}','${a.id}')" style="background:none;border:none;cursor:pointer;font-size:11px;color:#ef4444;padding:1px 4px;">✕</button></div>`).join("")
+                }
+              </div></td></tr>` : ""}`;
             }).join("")}
             <tr style="background:#F8FAFF;border-top:2px solid #E2E8F0;"><td colspan="7" style="padding:8px 10px;font-weight:700;color:#1B4FA0;font-size:12px;">소계</td><td style="padding:8px 10px;font-weight:800;color:#1B4FA0;font-size:13px;">${krw(travelTotal)}</td><td colspan="2" style="padding:8px 10px;font-size:11px;color:#94a3b8;">확정 ${TRAVEL_DETAIL.filter(t=>t.ok).length}명 · 미확인 ${TRAVEL_DETAIL.filter(t=>!t.ok).length}명</td></tr>
             </tbody>
@@ -2638,6 +2649,71 @@ window.saveTravelRow = id => {
   window._travelEditId=null; scheduleSave();
 };
 window.deleteTravelRow = id => { TRAVEL_DETAIL=TRAVEL_DETAIL.filter(t=>t.id!==id); window._travelEditId=null; scheduleSave(); };
+
+// 기본 연사 5명 중 빠진 사람 자동 복구 (기존 데이터는 건드리지 않음)
+window.restoreDefaultTravelers = () => {
+  const existingNames = new Set(TRAVEL_DETAIL.map(t => t.name.toLowerCase().trim()));
+  const missing = DEFAULT_TRAVEL_DETAIL.filter(d => !existingNames.has(d.name.toLowerCase().trim()));
+  if (missing.length === 0) {
+    alert("✅ 기본 연사 5명이 모두 등록되어 있습니다.\n(Bali Pulendran, Mariatou Tala Jallow, Nakorn Premsri, Norihisa Yamamoto, Kiat Ruxrungtham)");
+    return;
+  }
+  const names = missing.map(m => m.name).join("\n• ");
+  if (!confirm(`다음 ${missing.length}명을 기본값으로 복구합니다:\n\n• ${names}\n\n계속하시겠습니까?`)) return;
+  // 새 ID 부여하면서 추가 (기존 ID와 충돌 방지)
+  missing.forEach(m => {
+    const newId = "t_" + Date.now() + "_" + Math.random().toString(36).slice(2,5);
+    TRAVEL_DETAIL.push({...m, id: newId});
+  });
+  scheduleSave();
+  alert(`✅ ${missing.length}명이 복구되었습니다.`);
+};
+
+// ── 항공·숙박 연사별 파일 첨부 ───────────────────────
+window.toggleTravelAttach = id => {
+  window._travelAttachId = (window._travelAttachId === id) ? null : id;
+  window._travelEditId = null;
+  draw();
+};
+
+window.attachToTravel = (id, event) => {
+  const files = Array.from(event.target.files);
+  if(!files.length) return;
+  let done = 0;
+  files.forEach(file => {
+    if(file.size > 4.5*1024*1024) { alert(file.name+" 파일이 너무 큽니다 (최대 4.5MB)"); done++; return; }
+    const reader = new FileReader();
+    reader.onload = e => {
+      const aid = "ta_" + Date.now() + "_" + Math.random().toString(36).slice(2,6);
+      const now = new Date().toLocaleDateString("ko-KR",{month:"numeric",day:"numeric"});
+      localStorage.setItem("gvf2026_tfa_"+aid, e.target.result);
+      TRAVEL_DETAIL = TRAVEL_DETAIL.map(t => t.id === id ? {
+        ...t,
+        attachments: [...(t.attachments||[]), {id:aid, name:file.name, type:file.type, size:file.size, date:now}]
+      } : t);
+      done++;
+      if(done === files.length) { scheduleSave(); window._travelAttachId = id; draw(); }
+    };
+    reader.readAsDataURL(file);
+  });
+  event.target.value = "";
+};
+
+window.downloadTravelAttach = aid => {
+  const data = localStorage.getItem("gvf2026_tfa_"+aid);
+  if(!data) return alert("파일을 찾을 수 없습니다.\n(다른 기기에서 첨부된 파일은 그 기기에서만 다운로드 가능합니다.)");
+  let name = "파일";
+  TRAVEL_DETAIL.forEach(t => (t.attachments||[]).forEach(a => { if(a.id===aid) name = a.name; }));
+  const a = document.createElement("a"); a.href=data; a.download=name; a.click();
+};
+
+window.removeTravelAttach = (id, aid) => {
+  localStorage.removeItem("gvf2026_tfa_"+aid);
+  TRAVEL_DETAIL = TRAVEL_DETAIL.map(t => t.id === id ? {
+    ...t, attachments:(t.attachments||[]).filter(a=>a.id!==aid)
+  } : t);
+  scheduleSave(); window._travelAttachId = id; draw();
+};
 window.addTravelRow = () => { const newId="t"+Date.now(); TRAVEL_DETAIL.push({id:newId,name:"신규 연사",org:"",from:"",flight:0,hotel:0,trans:0,misc:0,ok:false}); window._travelEditId=newId; scheduleSave(); };
 window.toggleTravelOk = id => { TRAVEL_DETAIL=TRAVEL_DETAIL.map(t=>t.id===id?{...t,ok:!t.ok}:t); scheduleSave(); };
 window.addEntry = budgetId => {
