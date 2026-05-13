@@ -69,7 +69,7 @@ aside{width:200px;background:linear-gradient(175deg,#061220,#0B1D3F 55%,#0F2650)
 input,textarea{font-family:inherit;}
 input[type=text]{padding:6px 10px;border-radius:7px;border:1px solid #BFDBFE;font-size:13px;outline:none;width:100%;}
 input[type=text]:focus{border-color:#2563EB;}
-.sp-card{display:flex;align-items:center;gap:10px;padding:11px 14px;background:#fff;border-radius:10px;border:1px solid #F1F5F9;margin-bottom:7px;flex-wrap:wrap;box-shadow:0 1px 3px rgba(0,0,0,.05);}
+.sp-card{display:flex;align-items:center;gap:8px;padding:8px 11px;background:#fff;border-radius:9px;border:1px solid #F1F5F9;margin-bottom:5px;flex-wrap:wrap;box-shadow:0 1px 3px rgba(0,0,0,.04);font-size:12px;}
 .sp-edit{background:#FAFCFF;border-radius:10px;border:2px solid #BFDBFE;padding:14px 16px;margin-bottom:8px;}
 .cat-hd{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#fff;border-radius:10px;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.06);border:1px solid rgba(0,0,0,.04);margin-bottom:5px;user-select:none;}
 .cat-hd:hover{box-shadow:0 2px 10px rgba(0,0,0,.08);}
@@ -146,23 +146,7 @@ input[type=date]{font-size:16px !important;}
     </div>
     <div class="sync-box" id="sync-status"></div>
     <div class="urg-box" id="urg-box" onclick="goPage('checklist')" style="display:none;"></div>
-    <div style="padding-top:8px;">
-      <div class="sb-grp">메인 메뉴</div>
-      <div class="nav-item active" onclick="goPage('home')" data-p="home">🏠 홈</div>
-      <div class="nav-item" onclick="goPage('todo')" data-p="todo">📅 To-do List</div>
-      <div class="nav-item" onclick="goPage('checklist')" data-p="checklist">✅ 준비 현황</div>
-      <div class="nav-item" onclick="goPage('agenda')" data-p="agenda">📋 Agenda</div>
-      <div class="nav-item" onclick="goPage('speakers')" data-p="speakers">👥 참석자 관리</div>
-      <div class="nav-item" onclick="goPage('budget')" data-p="budget">📊 예산 관리</div>
-    </div>
-    <div class="sb-div"></div>
-    <div>
-      <div class="sb-grp">도구</div>
-      <div class="nav-item" onclick="goPage('magic')" data-p="magic">✨ AI Magic Box</div>
-      <div class="nav-item" onclick="goPage('files')" data-p="files">📎 파일 보관함</div>
-      <div class="nav-item" onclick="goPage('export')" data-p="export">📤 내보내기</div>
-      <div class="nav-item" onclick="exportJSON()" style="font-size:11px;">📤 JSON 내보내기</div>
-    </div>
+    <div id="sb-menu-area" style="padding-top:8px;"></div>
     <div class="sb-foot">
       마스터 대시보드 v2.5<br/>
       © IVI, Seoul · 빌드 2026.05.11<br/>
@@ -296,6 +280,25 @@ const DEFAULT_SP = [
 let CL = DEFAULT_CL.map(t=>({...t}));
 let SP = DEFAULT_SP.map(s=>({...s}));
 let DAILY_TODOS = {}; // {YYYY-MM-DD: [{id, task, done, time}, ...]}
+
+// ─── 사이드바 메뉴 (편집 가능) ───────────────────────
+const DEFAULT_SIDEBAR_MENU = [
+  {group: "메인 메뉴", items: [
+    {icon:"🏠", label:"홈", page:"home"},
+    {icon:"📅", label:"To-do List", page:"todo"},
+    {icon:"✅", label:"준비 현황", page:"checklist"},
+    {icon:"📋", label:"Agenda", page:"agenda"},
+    {icon:"👥", label:"참석자 관리", page:"speakers"},
+    {icon:"📊", label:"예산 관리", page:"budget"},
+  ]},
+  {group: "도구", items: [
+    {icon:"✨", label:"AI Magic Box", page:"magic"},
+    {icon:"📎", label:"파일 보관함", page:"files"},
+    {icon:"📤", label:"내보내기", page:"export"},
+  ]},
+];
+let SIDEBAR_MENU = JSON.parse(JSON.stringify(DEFAULT_SIDEBAR_MENU));
+let sbEditMode = false;
 let curPage = "home";
 let catOpen = Object.fromEntries(CATS.map(c=>[c,true]));
 let clEditId = null, spEditId = null;
@@ -347,6 +350,7 @@ function initFirebase(cfg) {
       if (d.td && Array.isArray(d.td))  TRAVEL_DETAIL = d.td;
       if (d.be && Array.isArray(d.be))  BUDGET_ENTRIES= d.be;
       if (d.dt && typeof d.dt === "object") DAILY_TODOS = d.dt;
+      if (d.sm && Array.isArray(d.sm))       SIDEBAR_MENU = d.sm;
       if (d.agendaHtml)   { AGENDA_HTML = d.agendaHtml; AGENDA_ROWS = null; }
       if (d.agendaMeta)   AGENDA_META = d.agendaMeta;
       if (d.savedAt)      savedAt     = d.savedAt;
@@ -380,6 +384,7 @@ async function saveToFirestore() {
       td: TRAVEL_DETAIL,
       be: BUDGET_ENTRIES,
       dt: DAILY_TODOS,
+      sm: SIDEBAR_MENU,
       agendaHtml: AGENDA_HTML,
       agendaMeta: AGENDA_META,
       savedAt: now,
@@ -497,7 +502,71 @@ function updateSidebar() {
   if(pbEl) pbEl.style.width=ov+"%";
   if(progPill) progPill.textContent="진행률 "+ov+"%";
   if(urgBox) { urgBox.style.display=urgCnt>0?"flex":"none"; urgBox.innerHTML="🚨 긴급 처리 "+urgCnt+"건"; }
+  renderSidebarMenu();
 }
+
+function renderSidebarMenu() {
+  const el = document.getElementById("sb-menu-area");
+  if (!el) return;
+  let html = "";
+  SIDEBAR_MENU.forEach((grp, gi) => {
+    if (gi > 0) html += `<div class="sb-div"></div>`;
+    html += `<div style="display:flex;align-items:center;justify-content:space-between;padding:0 14px;">
+      <div class="sb-grp" style="margin:0;padding:14px 0 6px;">${sbEditMode
+        ? `<input value="${esc(grp.group)}" onblur="setSbGroup(${gi}, this.value)" style="background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:rgba(255,255,255,.8);font-size:10px;font-weight:700;letter-spacing:.07em;padding:2px 6px;border-radius:4px;width:100px;">`
+        : esc(grp.group)
+      }</div>
+      ${sbEditMode ? `<button onclick="delSbGroup(${gi})" title="그룹 삭제" style="background:rgba(239,68,68,.2);border:none;color:#fca5a5;font-size:11px;padding:2px 7px;border-radius:5px;cursor:pointer;">🗑</button>` : ""}
+    </div>`;
+    grp.items.forEach((it, ii) => {
+      const isActive = it.page === curPage;
+      if (sbEditMode) {
+        html += `<div style="display:flex;align-items:center;gap:4px;padding:3px 10px;margin:2px 4px;background:rgba(255,255,255,.04);border-radius:7px;">
+          <input value="${esc(it.icon)}" onblur="setSbItem(${gi},${ii},'icon',this.value)" style="background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);color:#fff;width:28px;text-align:center;font-size:13px;padding:3px;border-radius:4px;">
+          <input value="${esc(it.label)}" onblur="setSbItem(${gi},${ii},'label',this.value)" style="background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);color:#fff;flex:1;min-width:0;font-size:12px;padding:3px 6px;border-radius:4px;">
+          <select onchange="setSbItem(${gi},${ii},'page',this.value)" style="background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);color:#fff;font-size:10px;padding:3px;border-radius:4px;max-width:80px;">
+            ${["home","todo","checklist","agenda","speakers","budget","magic","files","export"].map(p=>`<option value="${p}" ${p===it.page?"selected":""}>${p}</option>`).join("")}
+          </select>
+          <button onclick="moveSbItem(${gi},${ii},-1)" title="위로" style="background:none;border:none;color:rgba(255,255,255,.5);font-size:12px;cursor:pointer;padding:1px 4px;">▲</button>
+          <button onclick="moveSbItem(${gi},${ii},1)" title="아래로" style="background:none;border:none;color:rgba(255,255,255,.5);font-size:12px;cursor:pointer;padding:1px 4px;">▼</button>
+          <button onclick="delSbItem(${gi},${ii})" title="삭제" style="background:none;border:none;color:#fca5a5;font-size:11px;cursor:pointer;padding:1px 4px;">✕</button>
+        </div>`;
+      } else {
+        html += `<div class="nav-item ${isActive?"active":""}" onclick="goPage('${it.page}')" data-p="${it.page}">${esc(it.icon)} ${esc(it.label)}</div>`;
+      }
+    });
+    if (sbEditMode) {
+      html += `<button onclick="addSbItem(${gi})" style="margin:6px 8px;padding:5px 10px;background:rgba(34,197,94,.15);border:1px dashed rgba(34,197,94,.4);color:#86efac;border-radius:6px;font-size:11px;cursor:pointer;width:calc(100% - 16px);">＋ 항목 추가</button>`;
+    }
+  });
+  if (sbEditMode) {
+    html += `<button onclick="addSbGroup()" style="margin:8px 8px 0;padding:6px 10px;background:rgba(96,165,250,.15);border:1px dashed rgba(96,165,250,.4);color:#93C5FD;border-radius:6px;font-size:11px;cursor:pointer;width:calc(100% - 16px);">＋ 그룹 추가</button>`;
+    html += `<button onclick="resetSbMenu()" style="margin:6px 8px 0;padding:6px 10px;background:rgba(239,68,68,.1);border:1px dashed rgba(239,68,68,.3);color:#fca5a5;border-radius:6px;font-size:10px;cursor:pointer;width:calc(100% - 16px);">🔄 기본값으로 초기화</button>`;
+  }
+  html += `<div class="sb-div"></div>
+  <div style="padding:0 10px;">
+    <button onclick="toggleSbEdit()" style="width:100%;padding:6px 10px;border-radius:7px;background:${sbEditMode?"linear-gradient(135deg,#16a34a,#15803d)":"rgba(255,255,255,.06)"};border:1px solid rgba(255,255,255,.12);color:${sbEditMode?"#fff":"rgba(255,255,255,.6)"};font-size:11px;cursor:pointer;font-weight:${sbEditMode?"700":"500"};">
+      ${sbEditMode ? "✅ 편집 완료" : "⚙️ 사이드바 편집"}
+    </button>
+  </div>`;
+  el.innerHTML = html;
+}
+
+window.toggleSbEdit = () => { sbEditMode = !sbEditMode; renderSidebarMenu(); };
+window.setSbGroup = (gi, val) => { val=val.trim(); if(val){SIDEBAR_MENU[gi].group=val;scheduleSave();} };
+window.delSbGroup = (gi) => { if(confirm(`"${SIDEBAR_MENU[gi].group}" 그룹과 그 안의 모든 항목을 삭제하시겠습니까?`)){SIDEBAR_MENU.splice(gi,1);scheduleSave();renderSidebarMenu();} };
+window.addSbGroup = () => { SIDEBAR_MENU.push({group:"새 그룹", items:[]}); scheduleSave(); renderSidebarMenu(); };
+window.setSbItem = (gi, ii, key, val) => { val=val.trim(); if(val){SIDEBAR_MENU[gi].items[ii][key]=val;scheduleSave();renderSidebarMenu();} };
+window.delSbItem = (gi, ii) => { SIDEBAR_MENU[gi].items.splice(ii,1); scheduleSave(); renderSidebarMenu(); };
+window.addSbItem = (gi) => { SIDEBAR_MENU[gi].items.push({icon:"📌", label:"새 항목", page:"home"}); scheduleSave(); renderSidebarMenu(); };
+window.moveSbItem = (gi, ii, dir) => {
+  const items = SIDEBAR_MENU[gi].items;
+  const target = ii + dir;
+  if (target < 0 || target >= items.length) return;
+  [items[ii], items[target]] = [items[target], items[ii]];
+  scheduleSave(); renderSidebarMenu();
+};
+window.resetSbMenu = () => { if(confirm("사이드바 메뉴를 기본값으로 되돌립니다.")){SIDEBAR_MENU=JSON.parse(JSON.stringify(DEFAULT_SIDEBAR_MENU));scheduleSave();renderSidebarMenu();} };
 
 function openSidebar() {
   document.getElementById("sidebar").classList.add("open");
@@ -1714,20 +1783,20 @@ function pageSpeakers() {
       const travelInfo = getTravelInfo(s.name);
       const relatedCL  = getRelatedChecklist(s.name);
       const spFiles    = getSpFiles(s.id);
-      html += `<div onclick="window._spSelectedId=${s.id};window._spTab='speakers';draw()" style="display:flex;align-items:center;gap:12px;padding:14px 16px;background:#fff;border-radius:12px;border:1px solid #F1F5F9;margin-bottom:8px;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.05);transition:all .15s;">
-        <div style="width:44px;height:44px;border-radius:12px;background:${sColor}33;border:2px solid ${sColor}44;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">${s.status==="confirmed"?"✅":s.status==="cancelled"?"❌":"⏳"}</div>
+      html += `<div onclick="window._spSelectedId=${s.id};window._spTab='speakers';draw()" style="display:flex;align-items:center;gap:10px;padding:11px 13px;background:#fff;border-radius:10px;border:1px solid #F1F5F9;margin-bottom:6px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.05);transition:all .15s;">
+        <div style="width:36px;height:36px;border-radius:10px;background:${sColor}33;border:2px solid ${sColor}44;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;">${s.status==="confirmed"?"✅":s.status==="cancelled"?"❌":"⏳"}</div>
         <div style="flex:1;min-width:0;">
-          <div style="font-size:14px;font-weight:700;color:#0B1D3F;">${esc(s.name)}</div>
-          <div style="font-size:12px;color:#64748b;margin-top:1px;">${esc(s.org)}</div>
-          <div style="display:flex;gap:6px;margin-top:5px;flex-wrap:wrap;">
-            <span style="font-size:10px;background:${sColor}18;color:${sColor};padding:2px 8px;border-radius:8px;font-weight:700;">${{confirmed:"확정",pending:"대기",cancelled:"취소"}[s.status]||"대기"}</span>
-            ${agSessions.length>0?`<span style="font-size:10px;background:#EFF6FF;color:#1B4FA0;padding:2px 8px;border-radius:8px;font-weight:600;">📋 ${agSessions.length}세션</span>`:""}
-            ${travelInfo?`<span style="font-size:10px;background:${travelInfo.ok?"#F0FDF4":"#FEF3C7"};color:${travelInfo.ok?"#15803d":"#92400e"};padding:2px 8px;border-radius:8px;font-weight:600;">✈️ ${travelInfo.ok?"항공 확정":"항공 미확인"}</span>`:""}
-            ${relatedCL.length>0?`<span style="font-size:10px;background:#F0FDF4;color:#15803d;padding:2px 8px;border-radius:8px;font-weight:600;">✅ ${relatedCL.filter(t=>t.done).length}/${relatedCL.length}</span>`:""}
-            ${spFiles.length>0?`<span style="font-size:10px;background:#F5F3FF;color:#7c3aed;padding:2px 8px;border-radius:8px;font-weight:600;">📁 ${spFiles.length}개</span>`:""}
+          <div style="font-size:13px;font-weight:700;color:#0B1D3F;">${esc(s.name)}</div>
+          <div style="font-size:11px;color:#64748b;margin-top:1px;">${esc(s.org)}</div>
+          <div style="display:flex;gap:5px;margin-top:4px;flex-wrap:wrap;">
+            <span style="font-size:9px;background:${sColor}18;color:${sColor};padding:1px 7px;border-radius:7px;font-weight:700;">${{confirmed:"확정",pending:"대기",cancelled:"취소"}[s.status]||"대기"}</span>
+            ${agSessions.length>0?`<span style="font-size:9px;background:#EFF6FF;color:#1B4FA0;padding:1px 7px;border-radius:7px;font-weight:600;">📋 ${agSessions.length}세션</span>`:""}
+            ${travelInfo?`<span style="font-size:9px;background:${travelInfo.ok?"#F0FDF4":"#FEF3C7"};color:${travelInfo.ok?"#15803d":"#92400e"};padding:1px 7px;border-radius:7px;font-weight:600;">✈️ ${travelInfo.ok?"항공 확정":"항공 미확인"}</span>`:""}
+            ${relatedCL.length>0?`<span style="font-size:9px;background:#F0FDF4;color:#15803d;padding:1px 7px;border-radius:7px;font-weight:600;">✅ ${relatedCL.filter(t=>t.done).length}/${relatedCL.length}</span>`:""}
+            ${spFiles.length>0?`<span style="font-size:9px;background:#F5F3FF;color:#7c3aed;padding:1px 7px;border-radius:7px;font-weight:600;">📁 ${spFiles.length}개</span>`:""}
           </div>
         </div>
-        <span style="font-size:16px;color:#94a3b8;">›</span>
+        <span style="font-size:14px;color:#94a3b8;">›</span>
       </div>`;
     }
   });
@@ -2963,7 +3032,8 @@ window.addEventListener("DOMContentLoaded", () => {
     <style>@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}</style>`;
   // 파일에 내장된 설정으로 자동 연결
   initFirebase(FIREBASE_CONFIG);
-  // 사이드바 캘린더 즉시 렌더
+  // 사이드바 즉시 렌더
+  renderSidebarMenu();
   renderSidebarCalendar();
 });
 </script>
