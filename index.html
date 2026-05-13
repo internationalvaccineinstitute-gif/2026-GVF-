@@ -351,6 +351,9 @@ function initFirebase(cfg) {
       if (d.be && Array.isArray(d.be))  BUDGET_ENTRIES= d.be;
       if (d.dt && typeof d.dt === "object") DAILY_TODOS = d.dt;
       if (d.sm && Array.isArray(d.sm))       SIDEBAR_MENU = d.sm;
+      // Firestore에서 사이드바 메뉴를 받았다면 현재 페이지 제목도 갱신
+      const ttlEl = document.getElementById("pg-ttl");
+      if (ttlEl) ttlEl.textContent = getPageTitle(curPage);
       if (d.agendaHtml)   { AGENDA_HTML = d.agendaHtml; AGENDA_ROWS = null; }
       if (d.agendaMeta)   AGENDA_META = d.agendaMeta;
       if (d.savedAt)      savedAt     = d.savedAt;
@@ -556,7 +559,19 @@ window.toggleSbEdit = () => { sbEditMode = !sbEditMode; renderSidebarMenu(); };
 window.setSbGroup = (gi, val) => { val=val.trim(); if(val){SIDEBAR_MENU[gi].group=val;scheduleSave();} };
 window.delSbGroup = (gi) => { if(confirm(`"${SIDEBAR_MENU[gi].group}" 그룹과 그 안의 모든 항목을 삭제하시겠습니까?`)){SIDEBAR_MENU.splice(gi,1);scheduleSave();renderSidebarMenu();} };
 window.addSbGroup = () => { SIDEBAR_MENU.push({group:"새 그룹", items:[]}); scheduleSave(); renderSidebarMenu(); };
-window.setSbItem = (gi, ii, key, val) => { val=val.trim(); if(val){SIDEBAR_MENU[gi].items[ii][key]=val;scheduleSave();renderSidebarMenu();} };
+window.setSbItem = (gi, ii, key, val) => {
+  val=val.trim();
+  if(val){
+    SIDEBAR_MENU[gi].items[ii][key]=val;
+    scheduleSave();
+    renderSidebarMenu();
+    // 편집 중인 항목이 현재 페이지면 제목도 즉시 갱신
+    if (SIDEBAR_MENU[gi].items[ii].page === curPage) {
+      const ttlEl = document.getElementById("pg-ttl");
+      if (ttlEl) ttlEl.textContent = getPageTitle(curPage);
+    }
+  }
+};
 window.delSbItem = (gi, ii) => { SIDEBAR_MENU[gi].items.splice(ii,1); scheduleSave(); renderSidebarMenu(); };
 window.addSbItem = (gi) => { SIDEBAR_MENU[gi].items.push({icon:"📌", label:"새 항목", page:"home"}); scheduleSave(); renderSidebarMenu(); };
 window.moveSbItem = (gi, ii, dir) => {
@@ -580,12 +595,25 @@ function closeSidebar() {
 function goPage(page) {
   curPage = page;
   clEditId=null; spEditId=null; clAddCat=null; spShowAdd=false; clAttachId=null;
-  const ttls={home:"홈",todo:"📅 To-do List",checklist:"준비 현황",agenda:"Agenda",speakers:"참석자 관리",budget:"예산 관리",magic:"AI Magic Box",files:"파일 보관함",export:"내보내기"};
-  document.getElementById("pg-ttl").textContent = ttls[page]||"홈";
+  document.getElementById("pg-ttl").textContent = getPageTitle(page);
   document.querySelectorAll(".nav-item[data-p]").forEach(el=>el.classList.toggle("active",el.dataset.p===page));
   document.querySelectorAll(".bn-item[data-bn]").forEach(el=>el.classList.toggle("active",el.dataset.bn===page));
   closeSidebar();
   draw();
+}
+
+// 사이드바 메뉴에서 페이지 이름을 찾되, 없으면 기본값 사용
+function getPageTitle(page) {
+  const fallback = {home:"홈", todo:"📅 To-do List", checklist:"준비 현황", agenda:"Agenda", speakers:"참석자 관리", budget:"예산 관리", magic:"AI Magic Box", files:"파일 보관함", export:"내보내기"};
+  for (const grp of SIDEBAR_MENU) {
+    for (const item of grp.items) {
+      if (item.page === page) {
+        // 아이콘 + 이름 형태로 표시 (아이콘이 비어있으면 이름만)
+        return item.icon ? `${item.icon} ${item.label}` : item.label;
+      }
+    }
+  }
+  return fallback[page] || "홈";
 }
 
 function draw() {
