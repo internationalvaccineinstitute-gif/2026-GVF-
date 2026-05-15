@@ -1927,7 +1927,8 @@ function pageSpProfile(s) {
         ${travelInfo.ok?"✅ 확정":"⏳ 미확인"} (클릭하여 변경)
       </span>
     </div>
-  </div>`:""}
+  </div>
+  ${renderSpeakerTravelDetailCard(travelInfo)}` : ""}
   <div class="card" style="margin-bottom:14px;">
     <div class="card-hd">✅ 관련 체크리스트</div>
     ${relatedCL.length===0?`<div style="text-align:center;padding:16px;color:#94a3b8;font-size:13px;">관련 체크리스트 항목이 없습니다.</div>`:relatedCL.map(t=>`<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #F8FAFC;"><div onclick="toggleCheck(${t.id})" class="ck ${t.done?"on":""}">${t.done?"✓":""}</div><div style="flex:1;font-size:13px;color:${t.done?"#94a3b8":"#0B1D3F"};text-decoration:${t.done?"line-through":"none"};">${esc(t.task)}</div>${t.deadline?`<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:8px;background:#EFF6FF;color:#1B4FA0;">${t.deadline.slice(5).replace("-","/")}</span>`:""}</div>`).join("")}
@@ -2146,7 +2147,8 @@ function pageBudget() {
             ${TRAVEL_DETAIL.map(t=>{
               const sub = t.flight+t.hotel+t.trans+t.misc;
               if(trvEditId===t.id) return `<tr style="background:#F0FDF4;"><td colspan="10" style="padding:6px 8px;"><div style="display:grid;grid-template-columns:1fr 1fr 1fr 90px 90px 80px 80px auto auto;gap:5px;"><input id="te-name" value="${esc(t.name)}" style="padding:5px 8px;border-radius:6px;border:1.5px solid #BBF7D0;font-size:12px;outline:none;"><input id="te-org" value="${esc(t.org)}" style="padding:5px 8px;border-radius:6px;border:1.5px solid #BBF7D0;font-size:12px;outline:none;"><input id="te-from" value="${esc(t.from)}" style="padding:5px 8px;border-radius:6px;border:1.5px solid #BBF7D0;font-size:12px;outline:none;"><input id="te-flight" type="number" value="${t.flight}" style="padding:5px 8px;border-radius:6px;border:1.5px solid #BBF7D0;font-size:12px;outline:none;"><input id="te-hotel" type="number" value="${t.hotel}" style="padding:5px 8px;border-radius:6px;border:1.5px solid #BBF7D0;font-size:12px;outline:none;"><input id="te-trans" type="number" value="${t.trans}" style="padding:5px 8px;border-radius:6px;border:1.5px solid #BBF7D0;font-size:12px;outline:none;"><input id="te-misc" type="number" value="${t.misc}" style="padding:5px 8px;border-radius:6px;border:1.5px solid #BBF7D0;font-size:12px;outline:none;"><button onclick="saveTravelRow('${t.id}')" style="padding:5px 12px;border-radius:6px;background:#0d9488;color:#fff;border:none;cursor:pointer;font-size:12px;font-weight:700;">저장</button><button onclick="deleteTravelRow('${t.id}')" style="padding:5px 8px;border-radius:6px;background:#FEF2F2;color:#ef4444;border:1px solid #FECACA;cursor:pointer;font-size:12px;">🗑</button></div></td></tr>`;
-              return `<tr style="border-bottom:1px solid #F1F5F9;"><td style="padding:8px 10px;font-weight:700;font-size:12px;">${esc(t.name)}</td><td style="padding:8px 10px;color:#64748b;font-size:11px;">${esc(t.org)}</td><td style="padding:8px 10px;color:#64748b;font-size:11px;">${esc(t.from)}</td><td style="padding:8px 10px;font-size:12px;">${krw(t.flight)}</td><td style="padding:8px 10px;font-size:12px;">${krw(t.hotel)}</td><td style="padding:8px 10px;font-size:12px;">${krw(t.trans)}</td><td style="padding:8px 10px;font-size:12px;">${krw(t.misc)}</td><td style="padding:8px 10px;font-weight:700;color:#1B4FA0;font-size:12px;">${krw(sub)}</td><td style="padding:8px 10px;"><span onclick="toggleTravelOk('${t.id}')" style="cursor:pointer;padding:3px 9px;border-radius:10px;font-size:11px;font-weight:700;background:${t.ok?"#dcfce7":"#fef3c7"};color:${t.ok?"#15803d":"#92400e"};">${t.ok?"확정":"미확인"}</span></td><td style="padding:8px 6px;white-space:nowrap;"><button onclick="editTravelRow('${t.id}')" title="편집" style="background:none;border:none;cursor:pointer;font-size:13px;color:#94a3b8;padding:2px 4px;">✏️</button><button onclick="toggleTravelAttach('${t.id}')" title="파일 첨부" style="background:none;border:none;cursor:pointer;font-size:13px;padding:2px 4px;color:${(t.attachments||[]).length>0?'#0d9488':'#94a3b8'};">📎${(t.attachments||[]).length>0?`<sup style="font-size:9px;font-weight:700;color:#0d9488;">${(t.attachments||[]).length}</sup>`:""}</button><button onclick="deleteTravelRow('${t.id}')" title="삭제" style="background:none;border:none;cursor:pointer;font-size:13px;color:#fca5a5;padding:2px 4px;">🗑</button></td></tr>
+              return `<tr style="border-bottom:1px solid #F1F5F9;"><td style="padding:8px 10px;font-weight:700;font-size:12px;">${esc(t.name)}</td><td style="padding:8px 10px;color:#64748b;font-size:11px;">${esc(t.org)}</td><td style="padding:8px 10px;color:#64748b;font-size:11px;">${esc(t.from)}</td><td style="padding:8px 10px;font-size:12px;">${krw(t.flight)}</td><td style="padding:8px 10px;font-size:12px;">${krw(t.hotel)}</td><td style="padding:8px 10px;font-size:12px;">${krw(t.trans)}</td><td style="padding:8px 10px;font-size:12px;">${krw(t.misc)}</td><td style="padding:8px 10px;font-weight:700;color:#1B4FA0;font-size:12px;">${krw(sub)}</td><td style="padding:8px 10px;"><span onclick="toggleTravelOk('${t.id}')" style="cursor:pointer;padding:3px 9px;border-radius:10px;font-size:11px;font-weight:700;background:${t.ok?"#dcfce7":"#fef3c7"};color:${t.ok?"#15803d":"#92400e"};">${t.ok?"확정":"미확인"}</span></td><td style="padding:8px 6px;white-space:nowrap;"><button onclick="toggleTravelDetail('${t.id}')" title="출장 상세" style="background:${window._travelDetailId===t.id?'#EFF6FF':'none'};border:none;cursor:pointer;font-size:13px;padding:2px 5px;color:${(t.flightNo||t.hotelName||t.pickupTime)?'#1B4FA0':'#94a3b8'};border-radius:4px;">🛬${(t.flightNo||t.hotelName||t.pickupTime)?'<sup style="color:#1B4FA0;font-weight:700;">●</sup>':''}</button><button onclick="editTravelRow('${t.id}')" title="비용 편집" style="background:none;border:none;cursor:pointer;font-size:13px;color:#94a3b8;padding:2px 4px;">✏️</button><button onclick="toggleTravelAttach('${t.id}')" title="파일 첨부" style="background:none;border:none;cursor:pointer;font-size:13px;padding:2px 4px;color:${(t.attachments||[]).length>0?'#0d9488':'#94a3b8'};">📎${(t.attachments||[]).length>0?`<sup style="font-size:9px;font-weight:700;color:#0d9488;">${(t.attachments||[]).length}</sup>`:""}</button><button onclick="deleteTravelRow('${t.id}')" title="삭제" style="background:none;border:none;cursor:pointer;font-size:13px;color:#fca5a5;padding:2px 4px;">🗑</button></td></tr>
+              ${window._travelDetailId === t.id ? renderTravelDetailPanel(t) : ""}
               ${window._travelAttachId === t.id ? `<tr><td colspan="10" style="padding:0;"><div style="margin:4px 8px;padding:10px 12px;background:#F0FDFA;border-radius:8px;border:1px solid #99F6E4;">
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
                   <span style="font-size:11px;font-weight:700;color:#0d9488;">📎 ${esc(t.name)} 첨부 (E-Ticket·호텔 예약·여권 사본 등)</span>
@@ -2898,6 +2900,174 @@ window.restoreDefaultTravelers = () => {
 };
 
 // ── 항공·숙박 연사별 파일 첨부 ───────────────────────
+// 연사 프로필 화면용 출장 상세 요약 카드
+function renderSpeakerTravelDetailCard(t) {
+  if (!t) return "";
+  // 입력된 상세 정보가 하나라도 있을 때만 표시
+  const hasAir = t.airline || t.flightNo || t.flightArr || t.flightDep || t.seat || t.pnr;
+  const hasHotel = t.hotelName || t.hotelRes || t.checkIn || t.checkOut || t.roomType;
+  const hasPickup = t.pickupTime || t.pickupLoc || t.driver || t.vehicle || t.dropTime || t.dropLoc;
+  const hasReq = t.diet || t.passport || t.emergency || t.visa || t.notes;
+
+  if (!hasAir && !hasHotel && !hasPickup && !hasReq) {
+    return `<div class="card" style="margin-bottom:14px;background:#FFFBEB;border:1px solid #FDE68A;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+        <div>
+          <div style="font-size:13px;font-weight:700;color:#92400e;">🛬 출장 상세 정보 미입력</div>
+          <div style="font-size:11px;color:#92400e;margin-top:2px;opacity:0.85;">항공편·호텔·픽업 등의 상세 정보를 입력하세요</div>
+        </div>
+        <button onclick="goPage('budget');setTimeout(()=>{window._budgetOpenBlocks=window._budgetOpenBlocks||{};window._budgetOpenBlocks['b1']=true;window._travelDetailId='${t.id}';draw();},100)" style="padding:6px 14px;border-radius:18px;background:#92400e;color:#fff;border:none;cursor:pointer;font-size:11px;font-weight:700;white-space:nowrap;">입력하러 가기 →</button>
+      </div>
+    </div>`;
+  }
+
+  const section = (color, icon, title, items) => {
+    const filled = items.filter(([_,v]) => v);
+    if (filled.length === 0) return "";
+    return `<div style="background:#fff;border-radius:8px;padding:10px 12px;margin-bottom:6px;border:1px solid #F1F5F9;">
+      <div style="font-size:10px;font-weight:800;color:${color};letter-spacing:.05em;margin-bottom:6px;">${icon} ${title}</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:6px 12px;">
+        ${filled.map(([l,v])=>`<div><span style="font-size:10px;color:#94a3b8;display:block;">${esc(l)}</span><span style="font-size:12px;color:#0B1D3F;font-weight:500;">${esc(v)}</span></div>`).join("")}
+      </div>
+    </div>`;
+  };
+
+  return `<div class="card" style="margin-bottom:14px;background:linear-gradient(180deg,#F0F9FF,#fff);">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <div class="card-hd" style="margin:0;">🛬 출장 상세 정보</div>
+      <button onclick="goPage('budget');setTimeout(()=>{window._budgetOpenBlocks=window._budgetOpenBlocks||{};window._budgetOpenBlocks['b1']=true;window._travelDetailId='${t.id}';draw();},100)" style="padding:5px 12px;border-radius:18px;background:#EFF6FF;color:#1B4FA0;border:1px solid #BFDBFE;cursor:pointer;font-size:11px;font-weight:700;white-space:nowrap;">✏️ 편집</button>
+    </div>
+    ${section("#1B4FA0", "✈️", "항공편", [
+      ["항공사", t.airline], ["편명", t.flightNo],
+      ["도착 일시", t.flightArr], ["출국 일시", t.flightDep],
+      ["좌석", t.seat], ["예약번호 (PNR)", t.pnr],
+    ])}
+    ${section("#0d9488", "🏨", "호텔", [
+      ["호텔명", t.hotelName], ["예약번호", t.hotelRes],
+      ["체크인", t.checkIn], ["체크아웃", t.checkOut],
+      ["객실 타입", t.roomType], ["조식", t.breakfast],
+    ])}
+    ${section("#7c3aed", "🚗", "픽업·교통", [
+      ["픽업 시간", t.pickupTime], ["픽업 장소", t.pickupLoc],
+      ["운전기사", t.driver], ["차량", t.vehicle],
+      ["샌딩 시간", t.dropTime], ["샌딩 도착지", t.dropLoc],
+    ])}
+    ${section("#b45309", "📋", "식이·요청", [
+      ["식이 제한", t.diet], ["여권 만료", t.passport],
+      ["비상 연락처", t.emergency], ["비자", t.visa],
+    ])}
+    ${t.notes ? `<div style="background:#FEF9E7;border:1px solid #FDE68A;border-radius:8px;padding:10px 12px;margin-top:6px;">
+      <div style="font-size:10px;font-weight:800;color:#92400e;margin-bottom:4px;">💬 메모</div>
+      <div style="font-size:12px;color:#475569;line-height:1.6;white-space:pre-wrap;">${esc(t.notes)}</div>
+    </div>` : ""}
+  </div>`;
+}
+
+// ─── 출장 상세 펼침 패널 (항공/호텔/픽업/식이/요청) ─────
+function renderTravelDetailPanel(t) {
+  return `<tr><td colspan="10" style="padding:0;">
+    <div style="margin:6px 8px 12px;padding:14px 18px;background:linear-gradient(180deg,#F0F9FF,#fff);border-radius:10px;border:1px solid #BFDBFE;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <span style="font-size:13px;font-weight:800;color:#1B4FA0;">🛬 ${esc(t.name)} — 출장 상세</span>
+        <div style="display:flex;gap:6px;">
+          <button onclick="saveTravelDetail('${t.id}')" style="padding:5px 14px;border-radius:8px;background:#0d9488;color:#fff;border:none;cursor:pointer;font-size:12px;font-weight:700;">💾 저장</button>
+          <button onclick="window._travelDetailId=null;draw()" style="padding:5px 12px;border-radius:8px;background:#F1F5F9;color:#64748b;border:none;cursor:pointer;font-size:12px;">닫기</button>
+        </div>
+      </div>
+
+      <!-- 항공편 -->
+      <div style="background:#fff;border-radius:8px;padding:11px 13px;margin-bottom:10px;border:1px solid #E2E8F0;">
+        <div style="font-size:11px;font-weight:800;color:#1B4FA0;letter-spacing:.04em;margin-bottom:8px;">✈️ 항공편</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;">
+          ${tdInput("td-airline", "항공사", t.airline||"", "예: Asiana Airlines")}
+          ${tdInput("td-flightNo", "편명", t.flightNo||"", "예: OZ207")}
+          ${tdInput("td-flightArr", "도착 일시", t.flightArr||"", "6/24 (수) 15:30")}
+          ${tdInput("td-flightDep", "출국 일시", t.flightDep||"", "6/26 (금) 23:50")}
+          ${tdInput("td-seat", "좌석", t.seat||"", "Business / 5A")}
+          ${tdInput("td-pnr", "예약번호 (PNR)", t.pnr||"", "ABC123")}
+        </div>
+      </div>
+
+      <!-- 호텔 -->
+      <div style="background:#fff;border-radius:8px;padding:11px 13px;margin-bottom:10px;border:1px solid #E2E8F0;">
+        <div style="font-size:11px;font-weight:800;color:#0d9488;letter-spacing:.04em;margin-bottom:8px;">🏨 호텔</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;">
+          ${tdInput("td-hotelName", "호텔명", t.hotelName||"", "예: Sotetsu Hotel Seoul")}
+          ${tdInput("td-hotelRes", "예약번호", t.hotelRes||"", "예: HTL-2026-0001")}
+          ${tdInput("td-checkIn", "체크인", t.checkIn||"", "6/24 15:00")}
+          ${tdInput("td-checkOut", "체크아웃", t.checkOut||"", "6/26 12:00")}
+          ${tdInput("td-roomType", "객실 타입", t.roomType||"", "Deluxe, Single Bed")}
+          ${tdInput("td-breakfast", "조식 포함", t.breakfast||"", "Y / N")}
+        </div>
+      </div>
+
+      <!-- 픽업/교통 -->
+      <div style="background:#fff;border-radius:8px;padding:11px 13px;margin-bottom:10px;border:1px solid #E2E8F0;">
+        <div style="font-size:11px;font-weight:800;color:#7c3aed;letter-spacing:.04em;margin-bottom:8px;">🚗 픽업·교통</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;">
+          ${tdInput("td-pickupTime", "공항 픽업 시간", t.pickupTime||"", "6/24 15:50")}
+          ${tdInput("td-pickupLoc", "픽업 장소", t.pickupLoc||"", "ICN T1 Exit 8")}
+          ${tdInput("td-driver", "운전기사", t.driver||"", "김기사 / 010-1234-5678")}
+          ${tdInput("td-vehicle", "차량", t.vehicle||"", "검정 카니발 12가 3456")}
+          ${tdInput("td-dropTime", "샌딩 시간", t.dropTime||"", "6/26 20:00")}
+          ${tdInput("td-dropLoc", "샌딩 도착지", t.dropLoc||"", "ICN T1")}
+        </div>
+      </div>
+
+      <!-- 식이·요청·비상연락 -->
+      <div style="background:#fff;border-radius:8px;padding:11px 13px;border:1px solid #E2E8F0;">
+        <div style="font-size:11px;font-weight:800;color:#b45309;letter-spacing:.04em;margin-bottom:8px;">📋 식이·요청 사항</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:8px;">
+          ${tdInput("td-diet", "식이 제한", t.diet||"", "Vegetarian / Halal / Allergy")}
+          ${tdInput("td-passport", "여권 만료일", t.passport||"", "2030-12-31")}
+          ${tdInput("td-emergency", "비상 연락처", t.emergency||"", "010-1234-5678 (Spouse)")}
+          ${tdInput("td-visa", "비자", t.visa||"", "면제 / 발급완료 / 진행중")}
+        </div>
+        <div>
+          <label style="font-size:10px;color:#64748b;font-weight:700;display:block;margin-bottom:3px;">💬 메모 / 특이사항</label>
+          <textarea id="td-notes" rows="2" placeholder="동반자 정보, 특별 요청, 알레르기 상세 등 자유롭게 기록" style="width:100%;padding:6px 10px;border-radius:6px;border:1.5px solid #E2E8F0;font-size:12px;outline:none;font-family:inherit;resize:vertical;">${esc(t.notes||"")}</textarea>
+        </div>
+      </div>
+    </div>
+  </td></tr>`;
+}
+
+function tdInput(id, label, value, placeholder) {
+  return `<div>
+    <label style="font-size:10px;color:#64748b;font-weight:700;display:block;margin-bottom:3px;">${esc(label)}</label>
+    <input id="${id}" value="${esc(value)}" placeholder="${esc(placeholder)}" style="width:100%;padding:6px 10px;border-radius:6px;border:1.5px solid #E2E8F0;font-size:12px;outline:none;">
+  </div>`;
+}
+
+window.toggleTravelDetail = id => {
+  // 다른 모드 닫기
+  if (window._travelDetailId === id) {
+    window._travelDetailId = null;
+  } else {
+    window._travelDetailId = id;
+    window._travelAttachId = null;
+    window._travelEditId = null;
+  }
+  draw();
+};
+
+window.saveTravelDetail = id => {
+  const fields = ["airline","flightNo","flightArr","flightDep","seat","pnr",
+                  "hotelName","hotelRes","checkIn","checkOut","roomType","breakfast",
+                  "pickupTime","pickupLoc","driver","vehicle","dropTime","dropLoc",
+                  "diet","passport","emergency","visa","notes"];
+  const updates = {};
+  fields.forEach(f => {
+    const el = document.getElementById("td-" + f);
+    if (el) updates[f] = el.value.trim();
+  });
+  TRAVEL_DETAIL = TRAVEL_DETAIL.map(t => t.id===id ? {...t, ...updates} : t);
+  scheduleSave();
+  window._travelDetailId = null;
+  alert("✅ 출장 상세 정보가 저장되었습니다.");
+  draw();
+};
+
 window.toggleTravelAttach = id => {
   window._travelAttachId = (window._travelAttachId === id) ? null : id;
   window._travelEditId = null;
