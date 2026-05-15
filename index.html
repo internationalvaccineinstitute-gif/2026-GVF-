@@ -3335,8 +3335,182 @@ window.importBudgetExcel = (event) => {
       const wb = XLSX.read(e.target.result, {type:"array"});
       const result = {newBudget:[], newTravel:[], newEntries:[], errors:[], detected:[]};
 
-      // 시트별 의미 자동 추론
-      wb.SheetNames.forEach(sheetName => {
+      // 금액 파싱 헬퍼
+      const parseAmount = (v) => {
+        if (typeof v === "number") return Math.round(v);
+        const s = String(v||"").replace(/[,₩\s원]/g, "");
+        let n = parseFloat(s) || 0;
+        if (/만원|만/.test(String(v))) n *= 10000;
+        if (/억/.test(String(v))) n *= 100000000;
+        return Math.round(n);
+      };
+
+      // ═══════════════════════════════════════════════════
+      //   회계 양식 (Budget/Item/Amount + S.Total) 자동 인식
+      // ═══════════════════════════════════════════════════
+      const parseAccountingFormat = () => {
+        // "Budget" 또는 "예산" 시트 우선 탐색
+        const candidates = wb.SheetNames.filter(n => /budget|예산|estimat/i.test(n));
+        if (candidates.length === 0) return false;
+
+        for (const sheetName of candidates) {
+          const ws = wb.Sheets[sheetName];
+          const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:""});
+          // "Item" + "Amount" 헤더 행 찾기
+          let headerRow = -1, itemCol = -1, amountCol = -1, subCol = -1, eaCol = -1, unitCol = -1;
+          for (let i = 0; i < Math.min(10, rows.length); i++) {
+            const r = rows[i].map(c => String(c||"").trim().toLowerCase());
+            for (let j = 0; j < r.length; j++) {
+              if (/^item$|^항목$/.test(r[j])) itemCol = j;
+              if (/^amount$|^total$|^합계$|^금액$/.test(r[j])) amountCol = j;
+              if (/^ea$|^qty$|^수량$|^개수$/.test(r[j])) eaCol = j;
+              if (/unit\s*price|단가/.test(r[j])) unitCol = j;
+            }
+            if (itemCol !== -1 && amountCol !== -1) { headerRow = i; break; }
+          }
+          if (headerRow === -1) continue;
+          subCol = itemCol + 1; // 둘째 열 = 세부
+
+          // 카테고리 단위로 데이터 수집
+          let currentCat = null;
+          let currentCatTotal = 0;
+          let currentCatEntries = [];
+          const colorPool = ["#1B4FA0","#0891b2","#7c3aed","#0d9488","#b45309","#16a34a","#dc2626","#ea580c"];
+          let colorIdx = 0;
+
+          const flushCategory = () => {
+            if (!currentCat || currentCatTotal <= 0) return;
+            const budgetId = "b_" + Date.now() + "_" + result.newBudget.length;
+            result.newBudget.push({
+              id: budgetId,
+              label: currentCat,
+              budget: currentCatTotal,
+              actual: 0,
+              color: colorPool[colorIdx++ % colorPool.length]
+            });
+            // 세부 항목들을 지출 내역으로
+            currentCatEntries.forEach((e, ei) => {
+              result.newEntries.push({
+                id: "e_" + Date.now() + "_" + ei + "_" + Math.random().toString(36).slice(2,5),
+                budgetId,
+                desc: e.desc,
+                amount: e.amount,
+                date: "",
+                paid: false
+              });
+            });
+            currentCat = null;
+            currentCatTotal = 0;
+            currentCatEntries = [];
+          };
+
+          for (let i = headerRow + 1; i < rows.length; i++) {
+            const r = rows[i];
+            const itemStr = String(r[itemCol]||"").trim();
+            const subStr = String(r[subCol]||"").trim();
+            const amount = parseAmount(r[amountCol]);
+
+            // 총합계 (G. Total) → 종료
+            if (/^g\.?\s*total/i.test(itemStr) || /^총\s*합계/i.test(itemStr)) {
+              flushCategory();
+              break;
+            }
+            // 상세 항목 시작 부분 ("* Details for...") → 종료
+            if (/^\*\s*details|국제\s*항공/i.test(itemStr) || /^\*\s*details/i.test(subStr)) {
+              flushCategory();
+              break;
+            }
+            // 카테고리 소계 (S. Total / Sub Total / 소계)
+            if (/^s\.?\s*total|^sub\s*total|^소계/i.test(itemStr)) {
+              if (currentCat && amount > 0 && currentCatTotal === 0) {
+                currentCatTotal = amount;
+              }
+              if (currentCat) flushCategory();
+              continue;
+            }
+            // 새 카테고리 (Item 칸에 텍스트가 있고 그게 카테고리)
+            if (itemStr && !subStr && amount > 0) {
+              // "Honorarium 6500000" 같은 단일행 카테고리
+              if (currentCat) flushCategory();
+              currentCat = itemStr;
+              currentCatTotal = amount;
+              continue;
+            }
+            if (itemStr && !/^s\.?\s*total/i.test(itemStr)) {
+              // 카테고리 시작 (소계 행 다음 새 카테고리)
+              if (currentCat) flushCategory();
+              currentCat = itemStr;
+              currentCatTotal = 0;
+              currentCatEntries = [];
+              // 같은 행에 세부 정보 + 금액이 있으면 그것도 처리
+              if (subStr && amount > 0) {
+                currentCatEntries.push({desc: subStr, amount});
+              } else if (amount > 0 && !subStr) {
+                // 카테고리 + 금액만 있음 (단일 행 카테고리 케이스)
+                currentCatTotal = amount;
+              }
+              continue;
+            }
+            // 카테고리 안의 세부 행
+            if (currentCat && subStr && amount > 0) {
+              currentCatEntries.push({desc: subStr, amount});
+              continue;
+            }
+          }
+          flushCategory();
+
+          if (result.newBudget.length > 0) {
+            result.detected.push(`📊 "${sheetName}" → 예산 항목 ${result.newBudget.length}개 + 세부 지출 ${result.newEntries.length}건`);
+            // 같은 시트에서 "* Details for international travel cost" 부분 파싱
+            for (let i = 0; i < rows.length; i++) {
+              const r = rows[i];
+              const cell = String(r[itemCol]||"").trim();
+              if (/details\s+for\s+(international\s+)?travel/i.test(cell)) {
+                // 다음 헤더 행 찾기
+                for (let j = i + 1; j < Math.min(i + 5, rows.length); j++) {
+                  const hdr = rows[j].map(c => String(c||"").trim().toLowerCase());
+                  const nameC = hdr.findIndex(h => /^name$|^이름/.test(h));
+                  const flightC = hdr.findIndex(h => /flight|항공/.test(h));
+                  const hotelC  = hdr.findIndex(h => /hotel|호텔/.test(h));
+                  const transC  = hdr.findIndex(h => /trans/.test(h));
+                  const miscC   = hdr.findIndex(h => /misc|기타/.test(h));
+                  if (nameC !== -1 && flightC !== -1) {
+                    // 데이터 행
+                    for (let k = j + 1; k < rows.length; k++) {
+                      const tr = rows[k];
+                      const name = String(tr[nameC]||"").trim();
+                      if (!name || /^total|^합계|^s\.?\s*total/i.test(name)) continue;
+                      result.newTravel.push({
+                        id: "t_" + Date.now() + "_" + k + "_" + Math.random().toString(36).slice(2,5),
+                        name,
+                        org: "",
+                        from: "",
+                        flight: flightC !== -1 ? parseAmount(tr[flightC]) : 0,
+                        hotel:  hotelC  !== -1 ? parseAmount(tr[hotelC])  : 0,
+                        trans:  transC  !== -1 ? parseAmount(tr[transC])  : 0,
+                        misc:   miscC   !== -1 ? parseAmount(tr[miscC])   : 0,
+                        ok: false
+                      });
+                    }
+                    if (result.newTravel.length > 0) result.detected.push(`✈️ "${sheetName}" 내 Travel Details → 항공·숙박 ${result.newTravel.length}명`);
+                    break;
+                  }
+                }
+                break;
+              }
+            }
+            return true;
+          }
+        }
+        return false;
+      };
+
+      const accountingMatched = parseAccountingFormat();
+
+      // ═══════════════════════════════════════════════════
+      //   일반 자동 감지 (회계 양식 못 찾았을 때)
+      // ═══════════════════════════════════════════════════
+      if (!accountingMatched) wb.SheetNames.forEach(sheetName => {
         const ws = wb.Sheets[sheetName];
         const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:""});
         if (rows.length < 2) return;
@@ -3360,15 +3534,6 @@ window.importBudgetExcel = (event) => {
             }
           }
           return -1;
-        };
-
-        const parseAmount = (v) => {
-          if (typeof v === "number") return Math.round(v);
-          const s = String(v||"").replace(/[,₩\s원]/g, "");
-          let n = parseFloat(s) || 0;
-          if (/만원|만/.test(String(v))) n *= 10000;
-          if (/억/.test(String(v))) n *= 100000000;
-          return Math.round(n);
         };
 
         const parseYN = (v) => /^(y|yes|확정|완료|지급|true|1|✓|o|✅)$/i.test(String(v||"").trim());
