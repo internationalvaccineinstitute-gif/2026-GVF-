@@ -3380,25 +3380,30 @@ window.importBudgetExcel = (event) => {
 
           const flushCategory = () => {
             if (!currentCat || currentCatTotal <= 0) return;
-            const budgetId = "b_" + Date.now() + "_" + result.newBudget.length;
+            const isTravel = /^travel|항공|숙박/i.test(currentCat);
+            // Travel 카테고리는 고정 ID "b1" 사용 (TRAVEL_DETAIL과 연동)
+            const budgetId = isTravel ? "b1" : "b_" + Date.now() + "_" + result.newBudget.length;
+            const label = isTravel ? "항공·숙박" : currentCat;
             result.newBudget.push({
               id: budgetId,
-              label: currentCat,
+              label,
               budget: currentCatTotal,
               actual: 0,
-              color: colorPool[colorIdx++ % colorPool.length]
+              color: isTravel ? "#1B4FA0" : colorPool[colorIdx++ % colorPool.length]
             });
-            // 세부 항목들을 지출 내역으로
-            currentCatEntries.forEach((e, ei) => {
-              result.newEntries.push({
-                id: "e_" + Date.now() + "_" + ei + "_" + Math.random().toString(36).slice(2,5),
-                budgetId,
-                desc: e.desc,
-                amount: e.amount,
-                date: "",
-                paid: false
+            // Travel은 세부 행들을 지출 내역으로 안 넣음 (대신 TRAVEL_DETAIL이 담당)
+            if (!isTravel) {
+              currentCatEntries.forEach((e, ei) => {
+                result.newEntries.push({
+                  id: "e_" + Date.now() + "_" + ei + "_" + Math.random().toString(36).slice(2,5),
+                  budgetId,
+                  desc: e.desc,
+                  amount: e.amount,
+                  date: "",
+                  paid: false
+                });
               });
-            });
+            }
             currentCat = null;
             currentCatTotal = 0;
             currentCatEntries = [];
@@ -3498,6 +3503,12 @@ window.importBudgetExcel = (event) => {
                 }
                 break;
               }
+            }
+            // Travel 카테고리가 인식됐는데 연사 명단이 없으면 기본 5명 복원
+            const hasTravelCat = result.newBudget.some(b => b.id === "b1");
+            if (hasTravelCat && result.newTravel.length === 0) {
+              result.newTravel = DEFAULT_TRAVEL_DETAIL.map(t => ({...t}));
+              result.detected.push(`✈️ Travel 카테고리 감지 → 기본 연사 5명 복원`);
             }
             return true;
           }
