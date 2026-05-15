@@ -10,6 +10,8 @@
 <title>GVF 2026 통합 관리 대시보드</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>if(typeof pdfjsLib!=="undefined")pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";</script>
 <script src="https://cdn.jsdelivr.net/npm/firebase@9.22.2/firebase-app-compat.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/firebase@9.22.2/firebase-firestore-compat.min.js"></script>
 <style>
@@ -2963,17 +2965,201 @@ function renderSpeakerTravelDetailCard(t) {
   </div>`;
 }
 
-// ─── 출장 상세 펼침 패널 (항공/호텔/픽업/식이/요청) ─────
+// ─── 자동 인식: 파일에서 출장 정보 추출 ───────────────
+window.autoFillTravelDetail = async (travelId, event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+  const statusEl = document.getElementById(`td-autofill-status-${travelId}`);
+  const setStatus = (msg, color="#1B4FA0", bg="#EFF6FF") => {
+    if (!statusEl) return;
+    statusEl.style.display = "block";
+    statusEl.style.color = color;
+    statusEl.style.background = bg;
+    statusEl.textContent = msg;
+  };
+
+  setStatus("🔍 파일 분석 중...");
+
+  try {
+    let text = "";
+    if (file.type === "application/pdf" || /\.pdf$/i.test(file.name)) {
+      if (typeof pdfjsLib === "undefined") throw new Error("PDF 라이브러리 로드 실패. 새로고침 후 다시 시도하세요.");
+      const buf = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({data: buf}).promise;
+      const pages = [];
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        pages.push(content.items.map(it => it.str).join(" "));
+      }
+      text = pages.join("\n");
+    } else if (/\.(txt|eml)$/i.test(file.name) || file.type.startsWith("text/")) {
+      text = await file.text();
+    } else if (file.type.startsWith("image/")) {
+      setStatus("⚠️ 이미지는 OCR 미지원. PDF나 텍스트 파일을 사용하세요.", "#92400e", "#FEF3C7");
+      event.target.value = "";
+      return;
+    } else {
+      setStatus("⚠️ 지원하지 않는 파일 형식입니다. PDF/TXT/EML을 사용하세요.", "#92400e", "#FEF3C7");
+      event.target.value = "";
+      return;
+    }
+
+    if (!text || text.trim().length < 20) {
+      setStatus("⚠️ 텍스트 추출 실패. 스캔본은 인식이 어렵습니다.", "#92400e", "#FEF3C7");
+      event.target.value = "";
+      return;
+    }
+
+    // 정보 추출
+    const extracted = parseTravelText(text);
+    const filledCount = Object.keys(extracted).length;
+    if (filledCount === 0) {
+      setStatus("⚠️ 분석 가능한 정보를 찾지 못했습니다. 수동 입력해 주세요.", "#92400e", "#FEF3C7");
+      event.target.value = "";
+      return;
+    }
+
+    // 현재 입력 필드에 자동 채우기
+    let filled = [];
+    Object.entries(extracted).forEach(([key, value]) => {
+      const el = document.getElementById("td-" + key);
+      if (el && !el.value.trim()) {
+        el.value = value;
+        el.style.background = "#F0FDF4";
+        el.style.borderColor = "#86efac";
+        filled.push(key);
+      }
+    });
+
+    // 모든 필드가 이미 차있는 경우라도 추출 결과 보여주기
+    const labelMap = {airline:"항공사",flightNo:"편명",flightArr:"도착",flightDep:"출국",seat:"좌석",pnr:"PNR",hotelName:"호텔",hotelRes:"호텔예약",checkIn:"체크인",checkOut:"체크아웃",roomType:"객실"};
+    const filledLabels = filled.map(k => labelMap[k]||k).join(", ");
+    if (filled.length > 0) {
+      setStatus(`✅ ${filled.length}개 필드 자동 입력: ${filledLabels} (저장 버튼 눌러 확정)`, "#15803d", "#F0FDF4");
+    } else {
+      setStatus(`ℹ️ 정보 발견했으나 이미 입력된 필드라 덮어쓰지 않음: ${Object.keys(extracted).map(k=>labelMap[k]||k).join(", ")}`, "#92400e", "#FEF3C7");
+    }
+  } catch (err) {
+    setStatus(`⚠️ 분석 실패: ${err.message}`, "#991b1b", "#FEE2E2");
+  }
+  event.target.value = "";
+};
+
+// 텍스트에서 출장 정보 추출 (패턴 매칭)
+function parseTravelText(text) {
+  const t = text.replace(/\s+/g, " ").replace(/[^\S ]+/g, " ");
+  const out = {};
+
+  // ── 항공편 ────────────────────────────────────
+  // 편명: "OZ 201", "OZ201", "KE0703", "AA1234"
+  const flightM = t.match(/\b([A-Z]{2})\s?(\d{2,4})\b/);
+  if (flightM) {
+    out.flightNo = (flightM[1] + flightM[2]).toUpperCase();
+    // 항공사 코드 → 한글
+    const carriers = {
+      OZ:"Asiana Airlines", KE:"Korean Air", AA:"American Airlines",
+      DL:"Delta", UA:"United", JL:"Japan Airlines", NH:"ANA",
+      TG:"Thai Airways", SQ:"Singapore Airlines", CX:"Cathay Pacific",
+      AF:"Air France", LH:"Lufthansa", BA:"British Airways",
+      QF:"Qantas", EK:"Emirates", QR:"Qatar Airways"
+    };
+    if (carriers[flightM[1]]) out.airline = carriers[flightM[1]];
+  }
+
+  // 항공사 명시적 언급
+  if (!out.airline) {
+    const carrierNames = [
+      "Asiana Airlines", "Korean Air", "American Airlines", "Delta", "United",
+      "Japan Airlines", "ANA", "All Nippon", "Thai Airways", "Singapore Airlines",
+      "Cathay Pacific", "Air France", "Lufthansa", "British Airways",
+      "Qantas", "Emirates", "Qatar Airways"
+    ];
+    for (const c of carrierNames) {
+      if (new RegExp(c, "i").test(t)) { out.airline = c; break; }
+    }
+  }
+
+  // PNR / Booking Reference (6자리 영문+숫자)
+  const pnrM = t.match(/(?:PNR|Booking\s+(?:Reference|Code|Ref(?:erence)?)|Reservation\s+(?:Code|Number)|예약\s*번호)[\s:#]*([A-Z0-9]{5,8})\b/i);
+  if (pnrM) out.pnr = pnrM[1];
+
+  // 좌석 정보
+  const seatM = t.match(/(?:Seat|좌석)[\s:#]*([0-9]{1,3}[A-Z])\b/i);
+  if (seatM) out.seat = seatM[1];
+  const classM = t.match(/\b(Business|Economy|First|Premium\s+Economy|비즈니스|이코노미|퍼스트)\s*(?:Class|class|클래스)?\b/i);
+  if (classM) {
+    const cls = classM[1];
+    out.seat = (out.seat ? cls + " / " + out.seat : cls);
+  }
+
+  // 도착/출국 일시 — 다양한 포맷
+  // "Arrival: 24 Jun 2026 15:30" / "Departure: 26 Jun 2026 23:50"
+  const dateTimeRegex = /(\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4}|\d{4}[-\/]\d{1,2}[-\/]\d{1,2}|\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})\s*(?:at)?\s*(\d{1,2}[:.]\d{2})/gi;
+  const arrM = t.match(/(?:Arrival|Arrive[ds]?|도착)[^.]{0,80}?(\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*(?:\s+\d{4})?|\d{4}[-\/]\d{1,2}[-\/]\d{1,2})[^.]{0,30}?(\d{1,2}[:.]\d{2})/i);
+  if (arrM) out.flightArr = `${arrM[1]} ${arrM[2]}`.replace(/\./g, ":");
+
+  const depM = t.match(/(?:Departure|Depart[ds]?|출국|출발)[^.]{0,80}?(\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*(?:\s+\d{4})?|\d{4}[-\/]\d{1,2}[-\/]\d{1,2})[^.]{0,30}?(\d{1,2}[:.]\d{2})/i);
+  if (depM) out.flightDep = `${depM[1]} ${depM[2]}`.replace(/\./g, ":");
+
+  // 도착/출국 못 찾은 경우 첫 두 개의 날짜+시간을 사용
+  if (!out.flightArr || !out.flightDep) {
+    const allDt = [];
+    let m;
+    const re = new RegExp(dateTimeRegex.source, "gi");
+    while ((m = re.exec(t)) !== null) allDt.push(`${m[1]} ${m[2]}`.replace(/\./g, ":"));
+    if (allDt.length >= 1 && !out.flightArr) out.flightArr = allDt[0];
+    if (allDt.length >= 2 && !out.flightDep) out.flightDep = allDt[1];
+  }
+
+  // ── 호텔 ─────────────────────────────────────
+  // 호텔 이름 (Hotel, Resort, Suites, Inn 포함된 줄)
+  const hotelNameM = t.match(/(?:Hotel\s+Name|호텔\s*명|Property|Accommodation)[\s:]*([A-Z][A-Za-z0-9 &\-'.]{3,60}?(?:Hotel|Resort|Suites|Inn|호텔))/i)
+                 || t.match(/\b((?:Sotetsu|Marriott|Hilton|Hyatt|Sheraton|Westin|Conrad|Lotte|Shilla|Plaza|Four Seasons|Grand|Park)\s+[A-Za-z ]{2,40}?(?:Hotel|Resort|Suites|Seoul|호텔))/i)
+                 || t.match(/\b([A-Z][A-Za-z]+\s+(?:Hotel|Resort|Suites|호텔))\b/);
+  if (hotelNameM) out.hotelName = hotelNameM[1].trim();
+
+  // 호텔 예약번호
+  const hotelResM = t.match(/(?:Confirmation\s+(?:Number|Code|#)|Booking\s+Number|Reservation\s+(?:ID|Number)|예약\s*확인\s*번호)[\s:#]*([A-Z0-9\-]{6,20})/i);
+  if (hotelResM) out.hotelRes = hotelResM[1];
+
+  // 체크인/체크아웃
+  const ciM = t.match(/(?:Check[-\s]*in|체크인|입실)[^.]{0,40}?(\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*(?:\s+\d{4})?|\d{4}[-\/]\d{1,2}[-\/]\d{1,2}|\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?)/i);
+  if (ciM) out.checkIn = ciM[1];
+  const coM = t.match(/(?:Check[-\s]*out|체크아웃|퇴실)[^.]{0,40}?(\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*(?:\s+\d{4})?|\d{4}[-\/]\d{1,2}[-\/]\d{1,2}|\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?)/i);
+  if (coM) out.checkOut = coM[1];
+
+  // 객실 타입
+  const roomM = t.match(/(?:Room\s+Type|객실\s*(?:타입|종류))[\s:]*([A-Za-z0-9 ,]{3,50})/i)
+            || t.match(/\b((?:Deluxe|Standard|Superior|Executive|Suite|Premium|Twin|King|Queen|Double)\s*(?:Room|Bed|Twin)?[A-Za-z ]{0,30})/i);
+  if (roomM) out.roomType = roomM[1].trim().substring(0, 50);
+
+  // 조식 포함
+  const breakfastM = t.match(/(?:Breakfast|조식)[\s:]*(included|포함|N\/A|excluded|미포함|불포함)/i);
+  if (breakfastM) {
+    const v = breakfastM[1].toLowerCase();
+    out.breakfast = /included|포함/.test(v) ? "Y" : "N";
+  }
+
+  return out;
+}
+
+// ─── 자동 인식: 파일에서 출장 정보 추출 끝 ────────────
 function renderTravelDetailPanel(t) {
   return `<tr><td colspan="10" style="padding:0;">
     <div style="margin:6px 8px 12px;padding:14px 18px;background:linear-gradient(180deg,#F0F9FF,#fff);border-radius:10px;border:1px solid #BFDBFE;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
         <span style="font-size:13px;font-weight:800;color:#1B4FA0;">🛬 ${esc(t.name)} — 출장 상세</span>
-        <div style="display:flex;gap:6px;">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <label style="padding:5px 12px;border-radius:8px;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;cursor:pointer;font-size:12px;font-weight:700;display:inline-flex;align-items:center;gap:4px;" title="항공권·호텔 예약 PDF/이미지 첨부하면 자동 채워줍니다">
+            ✨ 자동 인식
+            <input type="file" accept=".pdf,.txt,.eml,image/*" style="display:none;" onchange="autoFillTravelDetail('${t.id}', event)">
+          </label>
           <button onclick="saveTravelDetail('${t.id}')" style="padding:5px 14px;border-radius:8px;background:#0d9488;color:#fff;border:none;cursor:pointer;font-size:12px;font-weight:700;">💾 저장</button>
           <button onclick="window._travelDetailId=null;draw()" style="padding:5px 12px;border-radius:8px;background:#F1F5F9;color:#64748b;border:none;cursor:pointer;font-size:12px;">닫기</button>
         </div>
       </div>
+      <div id="td-autofill-status-${t.id}" style="display:none;font-size:11px;padding:6px 10px;border-radius:6px;margin-bottom:10px;"></div>
 
       <!-- 항공편 -->
       <div style="background:#fff;border-radius:8px;padding:11px 13px;margin-bottom:10px;border:1px solid #E2E8F0;">
