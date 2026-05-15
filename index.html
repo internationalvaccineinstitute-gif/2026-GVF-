@@ -2048,6 +2048,7 @@ function pageBudget() {
       📊 엑셀 가져오기
       <input type="file" accept=".xlsx,.xls,.csv" style="display:none;" onchange="importBudgetExcel(event)">
     </label>
+    <button onclick="fixTravelCategory()" style="padding:6px 12px;border-radius:18px;font-size:11px;font-weight:600;background:#FAFCFF;color:#1B4FA0;border:1px solid #BFDBFE;cursor:pointer;white-space:nowrap;" title="Travel 카테고리를 연사 명단 방식으로 정리">✈️ Travel 정리</button>
     <button onclick="resetBudget()" style="padding:6px 12px;border-radius:18px;font-size:11px;font-weight:600;background:#FEF2F2;color:#ef4444;border:1px solid #FECACA;cursor:pointer;white-space:nowrap;">
       🔄 초기화
     </button>
@@ -2071,8 +2072,8 @@ function pageBudget() {
   </div>`;
 
   items.forEach(item => {
-    const isTravel = item.id === "b1";
-    const entries  = BUDGET_ENTRIES.filter(e=>e.budgetId===item.id);
+    const isTravel = item.id === "b1" || /^(travel|항공|숙박|항공.*숙박|국제\s*항공)/i.test(item.label||"");
+    const entries  = isTravel ? [] : BUDGET_ENTRIES.filter(e=>e.budgetId===item.id);
     const paidSum  = isTravel ? TRAVEL_DETAIL.filter(t=>t.ok).reduce((s,t)=>s+(t.flight+t.hotel+t.trans+t.misc),0) : entries.filter(e=>e.paid).reduce((s,e)=>s+e.amount,0);
     const isOpen   = openBlocks[item.id]!==false;
     const p        = item.budget>0?Math.min(100,Math.round((item.actual/item.budget)*100)):0;
@@ -3469,40 +3470,57 @@ window.importBudgetExcel = (event) => {
             // 같은 시트에서 "* Details for international travel cost" 부분 파싱
             for (let i = 0; i < rows.length; i++) {
               const r = rows[i];
-              const cell = String(r[itemCol]||"").trim();
-              if (/details\s+for\s+(international\s+)?travel/i.test(cell)) {
-                // 다음 헤더 행 찾기
-                for (let j = i + 1; j < Math.min(i + 5, rows.length); j++) {
-                  const hdr = rows[j].map(c => String(c||"").trim().toLowerCase());
-                  const nameC = hdr.findIndex(h => /^name$|^이름/.test(h));
-                  const flightC = hdr.findIndex(h => /flight|항공/.test(h));
-                  const hotelC  = hdr.findIndex(h => /hotel|호텔/.test(h));
-                  const transC  = hdr.findIndex(h => /trans/.test(h));
-                  const miscC   = hdr.findIndex(h => /misc|기타/.test(h));
-                  if (nameC !== -1 && flightC !== -1) {
-                    // 데이터 행
-                    for (let k = j + 1; k < rows.length; k++) {
-                      const tr = rows[k];
-                      const name = String(tr[nameC]||"").trim();
-                      if (!name || /^total|^합계|^s\.?\s*total/i.test(name)) continue;
-                      result.newTravel.push({
-                        id: "t_" + Date.now() + "_" + k + "_" + Math.random().toString(36).slice(2,5),
-                        name,
-                        org: "",
-                        from: "",
-                        flight: flightC !== -1 ? parseAmount(tr[flightC]) : 0,
-                        hotel:  hotelC  !== -1 ? parseAmount(tr[hotelC])  : 0,
-                        trans:  transC  !== -1 ? parseAmount(tr[transC])  : 0,
-                        misc:   miscC   !== -1 ? parseAmount(tr[miscC])   : 0,
-                        ok: false
-                      });
-                    }
-                    if (result.newTravel.length > 0) result.detected.push(`✈️ "${sheetName}" 내 Travel Details → 항공·숙박 ${result.newTravel.length}명`);
-                    break;
+              // 모든 셀에서 "Details for travel" 검색 (어느 컬럼이든)
+              const fullRowText = (r||[]).map(c => String(c||"").trim()).join(" ");
+              if (!/details\s+for\s+(international\s+)?travel/i.test(fullRowText)) continue;
+
+              // 다음 헤더 행 찾기 (Name + Flight)
+              for (let j = i + 1; j < Math.min(i + 5, rows.length); j++) {
+                const hdr = (rows[j]||[]).map(c => String(c||"").trim().toLowerCase());
+                const nameC   = hdr.findIndex(h => /^name$|^이름/.test(h));
+                const flightC = hdr.findIndex(h => /flight|항공/.test(h));
+                const hotelC  = hdr.findIndex(h => /hotel|호텔/.test(h));
+                const transC  = hdr.findIndex(h => /trans/.test(h));
+                const miscC   = hdr.findIndex(h => /misc|기타/.test(h));
+                if (nameC === -1 || flightC === -1) continue;
+
+                // Name과 Flight 사이의 빈 컬럼들 = org, from
+                // 예: Name(1) | (2) | (3) | Flight(4)  → org=2, from=3
+                let orgC = -1, fromC = -1;
+                const gap = flightC - nameC - 1;
+                if (gap >= 2) { orgC = nameC + 1; fromC = nameC + 2; }
+                else if (gap === 1) { orgC = nameC + 1; }
+
+                // 데이터 행 처리
+                for (let k = j + 1; k < rows.length; k++) {
+                  const tr = rows[k] || [];
+                  const name = String(tr[nameC]||"").trim();
+                  if (!name) {
+                    // 빈 행 만나도 계속, 단 S.Total / G.Total 만나면 종료
+                    continue;
                   }
+                  if (/^total|^합계|^s\.?\s*total|^g\.?\s*total|^subtotal|^소계|^총계/i.test(name)) break;
+                  // 다음 섹션(footer, * 시작 행 등) 만나면 종료
+                  if (/^\*/.test(name)) break;
+
+                  result.newTravel.push({
+                    id: "t_" + Date.now() + "_" + k + "_" + Math.random().toString(36).slice(2,5),
+                    name,
+                    org:  orgC  !== -1 ? String(tr[orgC]||"").trim()  : "",
+                    from: fromC !== -1 ? String(tr[fromC]||"").trim() : "",
+                    flight: flightC !== -1 ? parseAmount(tr[flightC]) : 0,
+                    hotel:  hotelC  !== -1 ? parseAmount(tr[hotelC])  : 0,
+                    trans:  transC  !== -1 ? parseAmount(tr[transC])  : 0,
+                    misc:   miscC   !== -1 ? parseAmount(tr[miscC])   : 0,
+                    ok: false
+                  });
+                }
+                if (result.newTravel.length > 0) {
+                  result.detected.push(`✈️ "${sheetName}" 내 Travel Details → 항공·숙박 ${result.newTravel.length}명`);
                 }
                 break;
               }
+              break;
             }
             // Travel 카테고리가 인식됐는데 연사 명단이 없으면 기본 5명 복원
             const hasTravelCat = result.newBudget.some(b => b.id === "b1");
@@ -3687,6 +3705,37 @@ window.importBudgetExcel = (event) => {
     event.target.value = "";
   };
   reader.readAsArrayBuffer(file);
+};
+
+window.fixTravelCategory = () => {
+  // Travel / 항공 / 숙박 라벨을 가진 budget item 찾기
+  const travelItem = BUDGET_ITEMS.find(b => /^(travel|항공|숙박|항공.*숙박|국제\s*항공)/i.test(b.label||""));
+  if (!travelItem) {
+    alert("Travel 카테고리를 찾지 못했습니다.\n현재 예산 항목명을 확인해 주세요.");
+    return;
+  }
+  const msg = `Travel 카테고리 정리 안내:\n\n` +
+    `1. "${travelItem.label}" → "항공·숙박"으로 변경 (ID: b1)\n` +
+    `2. 이 카테고리의 지출 내역 (${BUDGET_ENTRIES.filter(e=>e.budgetId===travelItem.id).length}건) 삭제\n` +
+    `3. 항공·숙박 명단 ${TRAVEL_DETAIL.length === 0 ? "기본 5명 복원" : `현재 ${TRAVEL_DETAIL.length}명 유지`}\n\n` +
+    `계속하시겠습니까?`;
+  if (!confirm(msg)) return;
+
+  // 1. Travel 카테고리 ID와 라벨 정리
+  const oldId = travelItem.id;
+  BUDGET_ITEMS = BUDGET_ITEMS.map(b => b.id === oldId ? {...b, id:"b1", label:"항공·숙박", color:"#1B4FA0"} : b);
+
+  // 2. 해당 지출 내역 삭제
+  BUDGET_ENTRIES = BUDGET_ENTRIES.filter(e => e.budgetId !== oldId && e.budgetId !== "b1");
+
+  // 3. 연사 명단이 비어있으면 기본 5명 복원
+  if (TRAVEL_DETAIL.length === 0) {
+    TRAVEL_DETAIL = DEFAULT_TRAVEL_DETAIL.map(t => ({...t}));
+  }
+
+  scheduleSave();
+  draw();
+  alert("✅ Travel 카테고리가 연사 명단 방식으로 정리되었습니다.");
 };
 
 window.resetBudget = () => {
