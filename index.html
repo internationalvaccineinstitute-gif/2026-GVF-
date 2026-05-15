@@ -1005,21 +1005,64 @@ function parseAgendaToRows(html) {
 
 function parseSpeakerHtml(html) {
   if (!html?.trim()) return [];
+
+  // HTML 정리: 단계별로 안전하게 추출
+  // 1. <p>, </p>를 <br>로 변환
+  let h = html.replace(/<\/p>\s*<p[^>]*>/gi, "<br>").replace(/<\/?p[^>]*>/gi, "");
+  // 2. 점들의 연속(……) 제거 (오타로 보이는 패턴)
+  h = h.replace(/[·•∙‧⋅]{3,}/g, "");
+  // 3. &amp; → &
+  h = h.replace(/&amp;/g, "&");
+
   const speakers = [];
-  // <strong>Name</strong> 단위로 분할
-  const parts = html.split(/(?=<strong>)/);
-  parts.forEach(part => {
-    if (!part.includes("<strong>")) return;
-    const nameMatch = part.match(/<strong>([^<]+)<\/strong>/);
-    if (!nameMatch) return;
-    const name = nameMatch[1].trim();
-    let sub = part.replace(/<strong>[^<]+<\/strong>/, "").trim();
-    sub = sub.replace(/^(\s*<br\s*\/?\s*>)+/, "").trim();
-    sub = sub.replace(/(<br\s*\/?\s*>\s*)+$/, "").trim();
-    sub = sub.replace(/<em>([^<]*)<\/em>/g, "$1").trim();
-    sub = sub.replace(/&amp;/g, "&");
-    speakers.push({name, sub});
-  });
+
+  // <strong> 태그가 있는 경우 → 기존 방식
+  if (/<strong>/i.test(h)) {
+    const parts = h.split(/(?=<strong>)/);
+    parts.forEach(part => {
+      if (!part.includes("<strong>")) return;
+      const nameMatch = part.match(/<strong>([^<]+)<\/strong>/);
+      if (!nameMatch) return;
+      const name = nameMatch[1].trim();
+      let sub = part.replace(/<strong>[^<]+<\/strong>/, "");
+      // <em> 내용 추출, <br>로 정리
+      sub = sub.replace(/<em[^>]*>([^<]*)<\/em>/gi, "$1");
+      sub = sub.replace(/<[^>]+>/g, " "); // 남은 태그 모두 제거
+      sub = sub.replace(/\s+/g, " ").trim();
+      // 앞뒤 구분자 정리
+      sub = sub.replace(/^[\s·•∙‧⋅\-–—,]+/, "").replace(/[\s·•∙‧⋅\-–—,]+$/, "").trim();
+      speakers.push({name, sub});
+    });
+  } else {
+    // <strong> 없는 경우 → 줄바꿈 기반 파싱
+    // <br>로 분리 → 연속된 두 줄을 (이름, 소속) 쌍으로 처리
+    h = h.replace(/<em[^>]*>([^<]*)<\/em>/gi, "$1");
+    h = h.replace(/<[^>]+>/g, "<br>"); // 모든 태그를 <br>로
+    const lines = h.split(/<br\s*\/?>/i).map(l => l.trim()).filter(l => l && l.length > 1);
+    // 한 줄 = 한 연사 + 그 다음 줄이 소속 형태일 가능성
+    if (lines.length === 0) return [];
+    if (lines.length === 1) {
+      speakers.push({name: lines[0], sub: ""});
+    } else {
+      // 두 줄씩 페어링 시도 (이름, 소속)
+      let i = 0;
+      while (i < lines.length) {
+        const line = lines[i];
+        const next = lines[i+1] || "";
+        // 다음 줄이 직책/소속처럼 보이면 (Director, CEO, Professor 등 포함) 페어로
+        const isJobTitle = /\b(director|ceo|cso|cto|professor|manager|officer|chief|head|president|coordinator)\b|연구원|교수|이사/i.test(next);
+        if (isJobTitle && next.length < 100) {
+          speakers.push({name: line, sub: next});
+          i += 2;
+        } else {
+          // 단독 이름 (TBC 같은 케이스)
+          speakers.push({name: line, sub: ""});
+          i += 1;
+        }
+      }
+    }
+  }
+
   return speakers;
 }
 
@@ -1122,6 +1165,7 @@ function pageAgenda() {
       <input type="file" accept=".docx" style="display:none;" onchange="updateAgenda(event)">
     </label>
     <button onclick="resetAgenda()" style="padding:7px 14px;border-radius:20px;font-size:12px;font-weight:600;background:#F1F5F9;color:#64748b;border:1px solid #E2E8F0;cursor:pointer;">초기화</button>
+    <button onclick="cleanupAgendaSpeakers()" style="padding:7px 14px;border-radius:20px;font-size:12px;font-weight:600;background:#FEF3C7;color:#92400e;border:1px solid #FDE68A;cursor:pointer;white-space:nowrap;" title="연사 표시 오류(태그 노출 등) 자동 정리">🧹 연사 표시 정리</button>
   </div>
   <div id="sync-result"></div>
   <div id="agenda-loading" style="display:none;text-align:center;padding:30px;color:#1B4FA0;font-weight:600;">⏳ Agenda 파일 분석 중...</div>
@@ -2158,38 +2202,71 @@ let magicText = "";
 
 function pageMagic() {
   const samples = [
-    "Yamamoto 교수로부터 연락이 왔습니다. 항공편 예약이 완료되었으며 6월 24일 서울 도착 예정입니다.",
-    "Ajoy Chakrabarti GATES Foundation 측에서 패널 참여를 최종 확인했습니다.",
-    "Lim Seung-kwan 위원장 비서실에서 환영사 참석이 최종 확정되었다고 연락이 왔습니다.",
-    "Kiat Ruxrungtham 교수 항공권 예약이 완료되었습니다.",
+    {cat:"📋 체크리스트", text:"명찰 제작 완료"},
+    {cat:"📋 체크리스트", text:"포디움 사인 설치 확인 완료"},
+    {cat:"👤 연사 상태", text:"Yamamoto 교수 항공편 예약 완료"},
+    {cat:"👤 연사 상태", text:"Ajoy Chakrabarti 패널 참여 확정"},
+    {cat:"👤 연사 상태", text:"Kiat 항공권 확정"},
+    {cat:"✏️ 연사 이름", text:"Rachel Park을 Minjeong Kim으로 변경"},
+    {cat:"➕ 체크리스트", text:"Logistics에 케이터링 메뉴 확정 추가"},
+    {cat:"💰 예산", text:"행사장에 ₩500만원 지출 (현장 임대료)"},
+    {cat:"📅 To-do", text:"내일 오전 10시 KDCA 미팅 추가"},
+    {cat:"🚨 긴급", text:"Lim Seung-kwan 위원장 불참 확정"},
   ];
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
   return `
   <div class="card" style="border:2px solid #BFDBFE;background:linear-gradient(135deg,#FAFCFF,#EFF6FF);">
     <div style="display:flex;align-items:center;gap:12px;">
       <div style="width:44px;height:44px;background:linear-gradient(135deg,#1B4FA0,#60A5FA);border-radius:13px;display:flex;align-items:center;justify-content:center;font-size:22px;">✨</div>
-      <div><div style="font-size:16px;font-weight:700;color:#0B1D3F;">스마트 자동 반영기</div><div style="font-size:13px;color:#64748b;margin-top:2px;">이메일·회의 메모 붙여넣으면 연사 상태·체크리스트가 자동 반영됩니다 (오프라인 작동)</div></div>
+      <div style="flex:1;">
+        <div style="font-size:16px;font-weight:700;color:#0B1D3F;">스마트 자동 반영기</div>
+        <div style="font-size:12px;color:#64748b;margin-top:2px;line-height:1.6;">짧은 명령부터 긴 이메일·회의 메모까지 자유롭게 입력. 자동으로 분석해 반영합니다.</div>
+      </div>
     </div>
   </div>
+
+  <div class="card" style="background:#FAFCFF;padding:14px 16px;">
+    <div style="font-size:12px;font-weight:700;color:#1B4FA0;margin-bottom:8px;">💬 지원되는 명령 유형</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:6px;font-size:11px;line-height:1.7;">
+      <div>📋 <strong>체크리스트 완료</strong> — "명찰 제작 완료"</div>
+      <div>➕ <strong>체크리스트 추가</strong> — "Logistics에 X 추가"</div>
+      <div>👤 <strong>연사 상태 변경</strong> — "Yamamoto 확정 / 불참"</div>
+      <div>✏️ <strong>연사 이름 변경</strong> — "A를 B로 변경"</div>
+      <div>💰 <strong>예산 지출 등록</strong> — "행사장에 500만원"</div>
+      <div>📅 <strong>To-do 추가</strong> — "내일 10시 미팅"</div>
+    </div>
+  </div>
+
   <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-      <div class="card-hd" style="margin:0;">📝 내용 입력</div>
-      ${isMobile?`<button onclick="document.getElementById('magic-input').focus()" style="padding:8px 16px;border-radius:20px;cursor:pointer;font-size:13px;font-weight:700;border:none;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;">🎙 음성으로 입력</button>`:
+      <div class="card-hd" style="margin:0;">📝 명령 입력</div>
+      ${isMobile?`<button onclick="document.getElementById('magic-input').focus()" style="padding:8px 16px;border-radius:20px;cursor:pointer;font-size:13px;font-weight:700;border:none;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;">🎙 음성</button>`:
       `<button id="voice-btn" onclick="toggleVoice()" style="padding:8px 18px;border-radius:20px;cursor:pointer;font-size:13px;font-weight:700;border:none;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;">🎙 음성으로 입력</button>`}
     </div>
     <div id="voice-status" style="display:none;padding:9px 13px;border-radius:9px;margin-bottom:10px;font-size:13px;font-weight:600;"></div>
-    <textarea id="magic-input" rows="5" placeholder="이메일, 회의 메모, 전화 통화 내용을 자유롭게 입력하세요." style="width:100%;padding:12px 14px;border-radius:10px;border:1.5px solid #BFDBFE;font-size:14px;line-height:1.7;resize:vertical;outline:none;font-family:inherit;">${esc(magicText)}</textarea>
+    <textarea id="magic-input" rows="4" placeholder="예: 명찰 제작 완료&#10;예: Yamamoto 항공편 확정&#10;예: Rachel Park을 Minjeong Kim으로 변경&#10;예: 행사장에 500만원 지출 (현장 임대료)" style="width:100%;padding:12px 14px;border-radius:10px;border:1.5px solid #BFDBFE;font-size:14px;line-height:1.7;resize:vertical;outline:none;font-family:inherit;">${esc(magicText)}</textarea>
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
       <button class="btn btn-g" onclick="magicText='';draw()">🗑 초기화</button>
-      <button class="btn btn-p" onclick="runMagic()">🚀 반영하기</button>
+      <button class="btn btn-p" onclick="runMagic()" style="background:linear-gradient(135deg,#1B4FA0,#2563EB);">🚀 반영하기</button>
     </div>
   </div>
   <div id="magic-result"></div>
   <div class="card">
-    <div class="card-hd">💡 입력 예시 (클릭하면 자동 입력)</div>
-    ${samples.map(s=>`<div onclick="document.getElementById('magic-input').value='${s.replace(/'/g,"\\'")}';magicText='${s.replace(/'/g,"\\'")}'" style="padding:9px 13px;border-radius:8px;cursor:pointer;background:#F8FAFC;border:1px solid #E2E8F0;font-size:13px;color:#475569;margin-bottom:7px;line-height:1.5;">💬 "${esc(s)}"</div>`).join('')}
+    <div class="card-hd">💡 명령 예시 (클릭하면 입력창에 추가)</div>
+    ${samples.map(s=>`<div onclick="appendMagicText('${s.text.replace(/'/g,"\\'")}')" style="padding:8px 13px;border-radius:8px;cursor:pointer;background:#F8FAFC;border:1px solid #E2E8F0;font-size:13px;color:#475569;margin-bottom:6px;line-height:1.5;display:flex;align-items:center;gap:10px;">
+      <span style="font-size:10px;font-weight:700;color:#1B4FA0;background:#EFF6FF;padding:2px 8px;border-radius:8px;white-space:nowrap;">${s.cat}</span>
+      <span style="flex:1;">${esc(s.text)}</span>
+    </div>`).join('')}
   </div>`;
 }
+
+window.appendMagicText = (txt) => {
+  const ta = document.getElementById("magic-input");
+  if (!ta) return;
+  ta.value = ta.value ? ta.value + "\n" + txt : txt;
+  magicText = ta.value;
+  ta.focus();
+};
 
 function toggleVoice() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -2231,188 +2308,328 @@ async function runMagic() {
   if(!txt) return;
   magicText = txt;
   const resEl = document.getElementById("magic-result");
-  if(resEl) resEl.innerHTML = `<div class="card" style="text-align:center;color:#64748b;">🔍 텍스트 분석 중...</div>`;
+  if(resEl) resEl.innerHTML = `<div class="card" style="text-align:center;color:#64748b;padding:20px;">🔍 명령 분석 중...</div>`;
+  await new Promise(r => setTimeout(r, 250));
 
-  await new Promise(r => setTimeout(r, 350));
-
-  // 상태 키워드 (한국어 + 영어)
-  const RX = {
-    confirmed: /(확정|완료|확인됨|컨펌|승낙|수락|동의|승인|체결|예약\s*완료|예약완료|확정됐|확정되|확정함|성공|booked|confirmed|approved|done\b|complete\b)/i,
-    cancelled: /(취소|거절|불참|못함|불가|cancel|declined)/i,
-    pending:   /(대기|TBC|미확정|검토|보류|pending|TBD)/i,
-    done:      /(완료|끝|완성|발송\s*완료|발송완료|체결|계약\s*완료|계약완료|반영|확정|발주\s*완료|발주완료|done\b|complete\b|sent|booked|finished)/i,
-  };
+  // 명령을 줄 단위로 분리 (한 입력에 여러 명령 가능)
+  const lines = txt.split(/\n+/).map(l => l.trim()).filter(l => l.length >= 2);
+  const blocks = lines.length === 0 ? [txt] : lines;
 
   const changes = [];
+  const ignored = [];
 
-  // ── 0. 연사 이름 변경 (rename) 감지 ───────────────────
-  // "Rachel Park 을 MJ Kim 으로 변경/교체/바꿔/수정"
-  // "Rachel Park → MJ Kim"
-  // "Change Rachel Park to MJ Kim"
-  const renamePatterns = [
-    /([A-Za-z가-힣][A-Za-z가-힣\.\s]{1,30}?)\s*(?:을|를|→|->)\s*([A-Za-z가-힣][A-Za-z가-힣\.\s]{1,30}?)\s*(?:으?로\s*)?(?:변경|교체|대체|바꿔|바꿈|수정|대신)/g,
-    /(?:change|replace|rename)\s+([A-Za-z가-힣][A-Za-z가-힣\.\s]{1,30}?)\s+(?:to|with|by)\s+([A-Za-z가-힣][A-Za-z가-힣\.\s]{1,30})/gi,
-  ];
-  const renamedNames = new Set();
-  for (const re of renamePatterns) {
-    let m;
-    while ((m = re.exec(txt)) !== null) {
-      const oldName = m[1].trim().replace(/\s+(대기|확정|취소|연사|발표자)$/g, '').trim();
-      const newName = m[2].trim().replace(/^(대기|확정|취소|연사|발표자)\s+/g, '').trim();
-      if (!oldName || !newName || oldName.length < 2 || newName.length < 2) continue;
-      // 정확한 매칭: 이름 토큰 중 2개 이상 일치하거나, 2글자 이하 이름은 1개 전체 일치
-      const oldTokens = oldName.split(/\s+/).filter(t => t.length >= 2);
-      const target = SP.find(s => {
-        const matchedTokens = oldTokens.filter(t => s.name.includes(t));
-        // 토큰이 1개면 완전 일치 필요, 2개 이상이면 절반 이상 일치
-        if (oldTokens.length === 1) return s.name.toLowerCase() === oldTokens[0].toLowerCase() || s.name.includes(oldTokens[0]);
-        return matchedTokens.length >= Math.ceil(oldTokens.length / 2) && matchedTokens.length >= 2;
-      });
-      if (!target || renamedNames.has(target.id)) continue;
-      renamedNames.add(target.id);
-      changes.push({
-        kind: "rename",
-        id: target.id,
-        oldName: target.name,
-        newName,
-      });
-    }
-  }
+  // 상태 키워드
+  const RX_CONFIRM = /(확정|완료|확인됨|컨펌|승낙|수락|동의|승인|체결|예약\s*완료|예약완료|확정됐|확정되|확정함|성공|booked|confirmed|approved|done\b|complete\b)/i;
+  const RX_CANCEL  = /(취소|거절|불참|못함|불가|안\s*된|cancel|declined)/i;
+  const RX_PENDING = /(대기|TBC|미확정|검토|보류|pending|TBD)/i;
+  const RX_DONE    = /(완료|끝|완성|발송\s*완료|발송완료|체결|계약\s*완료|계약완료|반영|확정|발주\s*완료|발주완료|done\b|complete\b|sent|booked|finished)/i;
 
-  // ── 1. 연사 상태 변경 감지 ────────────────────────────
-  SP.forEach(s => {
-    if (renamedNames.has(s.id)) return; // 이름 변경된 연사는 건너뜀
-    const tokens = s.name.split(" ").filter(t => t.length >= 2);
-    // 이름 매칭: 풀네임, 성, 이름 각각 시도
-    const matchedToken = tokens.find(t => txt.includes(t));
-    if (!matchedToken) return;
-
-    // 이름 주변 컨텍스트 (앞 100자, 뒤 150자)
-    const idx = txt.indexOf(matchedToken);
-    const start = Math.max(0, idx - 100);
-    const end = Math.min(txt.length, idx + matchedToken.length + 150);
-    const context = txt.slice(start, end);
-
-    let newStatus = null;
-    let kw = "";
-    if (RX.cancelled.test(context))     { newStatus = "cancelled"; kw = RX.cancelled.exec(context)[0]; }
-    else if (RX.confirmed.test(context)){ newStatus = "confirmed"; kw = RX.confirmed.exec(context)[0]; }
-    else if (RX.pending.test(context))  { newStatus = "pending";   kw = RX.pending.exec(context)[0]; }
-
-    if (newStatus && newStatus !== s.status) {
-      changes.push({
-        kind: "speaker",
-        id: s.id,
-        name: s.name,
-        oldStatus: s.status,
-        newStatus,
-        kw,
-      });
-    }
+  blocks.forEach(block => {
+    if (handleRename(block, changes)) return;
+    if (handleBudget(block, changes)) return;
+    if (handleTodo(block, changes)) return;
+    if (handleChecklistAdd(block, changes)) return;
+    if (handleSpeakerStatus(block, changes, {RX_CONFIRM, RX_CANCEL, RX_PENDING})) return;
+    if (handleChecklistDone(block, changes, RX_DONE)) return;
+    ignored.push(block);
   });
 
-  // ── 2. 체크리스트 완료 감지 ────────────────────────────
-  // 텍스트에 완료 키워드가 있어야 후보
-  const hasDoneKw = RX.done.test(txt);
+  // 변경사항 일괄 적용
+  applyChanges(changes);
+  if (changes.length > 0) scheduleSave();
 
+  // 결과 표시
+  renderMagicResult(resEl, changes, ignored);
+}
+
+// ─────────────────────────────────────────────────────────
+// 명령 처리 함수들
+// ─────────────────────────────────────────────────────────
+
+// 1. 연사 이름 변경: "A를 B로 변경" / "A → B" / "Change A to B"
+function handleRename(text, changes) {
+  const patterns = [
+    /([A-Za-z가-힣][A-Za-z가-힣\.\s\-]{1,40}?)\s*(?:을|를|→|->)\s*([A-Za-z가-힣][A-Za-z가-힣\.\s\-]{1,40}?)\s*(?:으?로\s*)?(?:변경|교체|대체|바꿔|바꿈|수정|대신)/i,
+    /(?:change|replace|rename)\s+([A-Za-z가-힣][A-Za-z가-힣\.\s\-]{1,40}?)\s+(?:to|with|by)\s+([A-Za-z가-힣][A-Za-z가-힣\.\s\-]{1,40})/i,
+  ];
+  for (const re of patterns) {
+    const m = text.match(re);
+    if (!m) continue;
+    let oldName = m[1].trim().replace(/\s+(대기|확정|취소|연사|발표자)$/g, '').trim();
+    let newName = m[2].trim().replace(/^(대기|확정|취소|연사|발표자)\s+/g, '').trim();
+    if (!oldName || !newName || oldName.length < 2 || newName.length < 2) continue;
+    const oldTokens = oldName.split(/\s+/).filter(t => t.length >= 2);
+    const target = SP.find(s => {
+      const matched = oldTokens.filter(t => s.name.includes(t));
+      if (oldTokens.length === 1) return s.name === oldTokens[0] || s.name.includes(oldTokens[0]);
+      return matched.length >= Math.ceil(oldTokens.length / 2) && matched.length >= 2;
+    });
+    if (!target) { changes.push({kind:"error", text, reason:`"${oldName}" 연사를 찾을 수 없습니다`}); return true; }
+    changes.push({kind:"rename", id:target.id, oldName:target.name, newName});
+    return true;
+  }
+  return false;
+}
+
+// 2. 예산 지출 등록: "행사장에 500만원" / "사례비 200만원 추가"
+function handleBudget(text, changes) {
+  // 금액 패턴: "₩500만원", "500만", "5,000,000원", "5000000"
+  const amtMatch = text.match(/(?:₩\s*)?(\d{1,3}(?:[,_]\d{3})+|\d+)\s*(만원|만|억|원|KRW)?/i);
+  if (!amtMatch) return false;
+  let amount = parseInt(amtMatch[1].replace(/[,_]/g, ""));
+  const unit = (amtMatch[2] || "").trim();
+  if (/만원|만/i.test(unit)) amount *= 10000;
+  if (/억/i.test(unit)) amount *= 100000000;
+  if (amount < 1000) return false; // 너무 작으면 예산이 아님
+
+  // 어느 항목인지 찾기
+  const itemKw = BUDGET_ITEMS.find(b => text.includes(b.label));
+  if (!itemKw) return false;
+
+  // 내역 추출 (괄호 안 또는 키워드 뒤)
+  const descMatch = text.match(/\(([^)]+)\)/);
+  const desc = descMatch ? descMatch[1].trim() : `${itemKw.label} 지출`;
+  const today = new Date().toLocaleDateString("ko-KR",{year:"2-digit",month:"2-digit",day:"2-digit"});
+
+  changes.push({
+    kind: "budget",
+    budgetId: itemKw.id,
+    budgetLabel: itemKw.label,
+    desc,
+    amount,
+    date: today
+  });
+  return true;
+}
+
+// 3. To-do 추가: "내일 10시 미팅" / "오늘 14시 ABC 약속"
+function handleTodo(text, changes) {
+  const todoKw = /(미팅|약속|회의|todo|to-do|할\s*일|일정|콜)/i;
+  if (!todoKw.test(text)) return false;
+
+  // 날짜 결정
+  let date = new Date();
+  if (/내일|tomorrow/i.test(text)) date.setDate(date.getDate() + 1);
+  else if (/모레/i.test(text)) date.setDate(date.getDate() + 2);
+  else if (/오늘|today/i.test(text)) {}
+  else {
+    // "5월 20일", "6/15" 같은 명시적 날짜
+    const dM = text.match(/(\d{1,2})\s*[월\/.\-]\s*(\d{1,2})/);
+    if (dM) {
+      const y = new Date().getFullYear();
+      const m = parseInt(dM[1]) - 1, d = parseInt(dM[2]);
+      date = new Date(y, m, d);
+    }
+  }
+  const ds = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
+
+  // 시간 추출 ("10시", "오전 10시", "14:00", "오후 2시")
+  let time = "";
+  const tM = text.match(/(?:(오전|오후|AM|PM)\s*)?(\d{1,2})\s*[시:](\s*\d{1,2}\s*분?)?/i);
+  if (tM) {
+    let h = parseInt(tM[2]);
+    const min = tM[3] ? parseInt(tM[3].replace(/\D/g,"")) : 0;
+    const ap = (tM[1] || "").toLowerCase();
+    if ((ap === "오후" || ap === "pm") && h < 12) h += 12;
+    if ((ap === "오전" || ap === "am") && h === 12) h = 0;
+    time = `${String(h).padStart(2,"0")}:${String(min).padStart(2,"0")}`;
+  }
+
+  // 할 일 텍스트 (시간/날짜 관련 단어 제거)
+  let task = text
+    .replace(/(내일|모레|오늘|tomorrow|today)/gi, "")
+    .replace(/(\d{1,2}\s*[월\/.\-]\s*\d{1,2}일?)/g, "")
+    .replace(/(오전|오후|AM|PM)?\s*\d{1,2}\s*[시:]\s*(\d{1,2}\s*분?)?/gi, "")
+    .replace(/에\s+추가|추가해\s*줘|추가/g, "")
+    .replace(/^\s*[,·\-—]+|[,·\-—]+\s*$/g, "")
+    .trim();
+  if (!task) task = "미팅";
+
+  changes.push({kind:"todo", date:ds, time, task});
+  return true;
+}
+
+// 4. 체크리스트 추가: "Logistics에 X 추가" / "장소 준비에 Y 등록"
+function handleChecklistAdd(text, changes) {
+  if (!/(추가|등록|만들어|새로운\s*항목)/i.test(text)) return false;
+  // 카테고리 찾기
+  const cat = CATS.find(c => text.includes(c));
+  if (!cat) return false;
+  // 작업 내용 추출
+  let task = text
+    .replace(new RegExp(cat + "\\s*에?\\s*", "g"), "")
+    .replace(/체크리스트|항목|준비/g, "")
+    .replace(/(추가해\s*줘|추가|등록해\s*줘|등록|만들어\s*줘|만들어)/g, "")
+    .replace(/^\s*[,·\-—]+|[,·\-—]+\s*$/g, "")
+    .trim();
+  if (!task || task.length < 2) return false;
+  changes.push({kind:"checklistAdd", cat, task});
+  return true;
+}
+
+// 5. 연사 상태 변경
+function handleSpeakerStatus(text, changes, {RX_CONFIRM, RX_CANCEL, RX_PENDING}) {
+  // 어떤 연사 이름이 있는지 확인
+  for (const s of SP) {
+    const tokens = s.name.split(/\s+/).filter(t => t.length >= 2);
+    const matchedToken = tokens.find(t => text.includes(t));
+    if (!matchedToken) continue;
+    // 컨텍스트에서 상태 키워드 찾기
+    let newStatus = null, kw = "";
+    if (RX_CANCEL.test(text))       { newStatus = "cancelled"; kw = RX_CANCEL.exec(text)[0]; }
+    else if (RX_CONFIRM.test(text)) { newStatus = "confirmed"; kw = RX_CONFIRM.exec(text)[0]; }
+    else if (RX_PENDING.test(text)) { newStatus = "pending";   kw = RX_PENDING.exec(text)[0]; }
+    if (!newStatus || newStatus === s.status) continue;
+    changes.push({kind:"speaker", id:s.id, name:s.name, oldStatus:s.status, newStatus, kw});
+    return true;
+  }
+  return false;
+}
+
+// 6. 체크리스트 완료
+function handleChecklistDone(text, changes, RX_DONE) {
+  if (!RX_DONE.test(text)) return false;
+  const stopWords = /^(및|또는|등|이|가|을|를|에|로|와|과|의|는|은|도|만|에서|에게)$/;
+  // 미완료 항목 중 가장 잘 매칭되는 것 찾기
+  let bestMatch = null, bestScore = 0, bestKeys = [];
   CL.forEach(t => {
     if (t.done) return;
-    // 항목에서 의미 있는 키워드 추출 (2글자 이상, 조사 제외)
-    const stopWords = /^(및|또는|등|이|가|을|를|에|로|와|과|의|는|은|도|만|에서|에게)$/;
-    const taskKeys = t.task
-      .replace(/[—\-()[\]·✓⚠₩,.\d]+/g, ' ')
-      .split(/\s+/)
-      .filter(w => w.length >= 2 && !stopWords.test(w));
-
-    // 일치하는 키워드 개수
-    const matched = taskKeys.filter(k => txt.includes(k));
-
-    // 매칭 신뢰도: 최소 2개 단어 + 완료 키워드
-    if (matched.length >= 2 && hasDoneKw) {
-      changes.push({
-        kind: "checklist",
-        id: t.id,
-        task: t.task,
-        matched,
-      });
+    const keys = t.task.replace(/[—\-()[\]·✓⚠₩,.\d]+/g, ' ').split(/\s+/).filter(w => w.length >= 2 && !stopWords.test(w));
+    const matched = keys.filter(k => text.includes(k));
+    if (matched.length > bestScore) {
+      bestScore = matched.length;
+      bestMatch = t;
+      bestKeys = matched;
     }
   });
-
-  // ── 변경사항 적용 ────────────────────────────────────
-  if (changes.length > 0) {
-    changes.forEach(c => {
-      if (c.kind === "rename") SP = SP.map(s => s.id === c.id ? {...s, name: c.newName} : s);
-      if (c.kind === "speaker") SP = SP.map(s => s.id === c.id ? {...s, status: c.newStatus} : s);
-      if (c.kind === "checklist") CL = CL.map(t => t.id === c.id ? {...t, done: true} : t);
-    });
-    scheduleSave();
+  if (bestMatch && bestScore >= 2) {
+    changes.push({kind:"checklist", id:bestMatch.id, task:bestMatch.task, matched:bestKeys});
+    return true;
   }
+  return false;
+}
 
-  // ── 결과 표시 ────────────────────────────────────────
-  const sLbl = {confirmed: "확정", pending: "대기", cancelled: "취소"};
-  const sColor = {confirmed: "#15803d", pending: "#92400e", cancelled: "#991b1b"};
+// 변경사항 적용
+function applyChanges(changes) {
+  changes.forEach(c => {
+    if (c.kind === "rename")        SP = SP.map(s => s.id===c.id ? {...s, name:c.newName} : s);
+    if (c.kind === "speaker")       SP = SP.map(s => s.id===c.id ? {...s, status:c.newStatus} : s);
+    if (c.kind === "checklist")     CL = CL.map(t => t.id===c.id ? {...t, done:true} : t);
+    if (c.kind === "checklistAdd") {
+      const newId = Math.max(0, ...CL.map(t=>typeof t.id==="number"?t.id:0)) + 1;
+      CL.push({id:newId, cat:c.cat, task:c.task, done:false, pri:"medium", deadline:""});
+    }
+    if (c.kind === "budget") {
+      const eid = "e_" + Date.now() + "_" + Math.random().toString(36).slice(2,5);
+      BUDGET_ENTRIES.push({id:eid, budgetId:c.budgetId, desc:c.desc, amount:c.amount, date:c.date, paid:false});
+    }
+    if (c.kind === "todo") {
+      if (!DAILY_TODOS[c.date]) DAILY_TODOS[c.date] = [];
+      const id = "tt_" + Date.now() + "_" + Math.random().toString(36).slice(2,5);
+      DAILY_TODOS[c.date].push({id, task:c.task, done:false, time:c.time||""});
+      DAILY_TODOS[c.date].sort((a,b) => (a.time||"99:99").localeCompare(b.time||"99:99"));
+    }
+  });
+}
 
+// 결과 렌더링
+function renderMagicResult(resEl, changes, ignored) {
   if (!resEl) return;
-  if (changes.length === 0) {
-    resEl.innerHTML = `<div class="card" style="border:1px solid #FECACA;background:#FFF5F5;">
-      <div style="font-size:14px;font-weight:700;color:#991b1b;margin-bottom:10px;">⚠️ 감지된 변경사항 없음</div>
-      <div style="font-size:13px;color:#64748b;line-height:1.8;">
-        텍스트에서 자동 반영 가능한 항목을 찾지 못했습니다. 지원되는 명령:
-        <ul style="margin:8px 0 0 20px;padding:0;">
-          <li><strong>상태 변경</strong>: "Yamamoto 항공편 확정" → 확정 처리</li>
-          <li><strong>이름 변경</strong>: "Rachel Park을 MJ Kim으로 변경" → 이름 교체</li>
-          <li><strong>체크리스트 완료</strong>: "LED 렌탈 계약 완료" → 자동 체크</li>
-        </ul>
-      </div>
-    </div>`;
+  const sLbl = {confirmed:"확정", pending:"대기", cancelled:"취소"};
+  const sColor = {confirmed:"#15803d", pending:"#92400e", cancelled:"#991b1b"};
+
+  if (changes.length === 0 && ignored.length === 0) {
+    resEl.innerHTML = "";
     return;
   }
 
-  resEl.innerHTML = `<div class="card" style="border:1px solid #BBF7D0;">
-    <div class="card-hd" style="color:#15803d;">✅ ${changes.length}건 자동 반영 완료</div>
-    ${changes.map(c => {
+  let html = "";
+  if (changes.length > 0) {
+    html += `<div class="card" style="border:1px solid #BBF7D0;background:#F0FDF4;">
+      <div class="card-hd" style="color:#15803d;">✅ ${changes.length}건 자동 반영 완료</div>`;
+    changes.forEach(c => {
       if (c.kind === "rename") {
-        return `<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 13px;border-radius:8px;margin-bottom:6px;background:#FAF5FF;border:1px solid #DDD6FE;">
+        html += `<div style="display:flex;align-items:flex-start;gap:10px;padding:9px 12px;border-radius:8px;margin-bottom:5px;background:#FAF5FF;border:1px solid #DDD6FE;">
           <span style="font-size:18px;">✏️</span>
           <div style="flex:1;">
-            <div style="font-size:14px;font-weight:700;color:#0B1D3F;">연사 이름 변경</div>
-            <div style="font-size:12px;color:#475569;margin-top:3px;">
-              <span style="text-decoration:line-through;color:#94a3b8;">${esc(c.oldName)}</span>
-              → <span style="color:#7c3aed;font-weight:700;">${esc(c.newName)}</span>
+            <div style="font-size:13px;font-weight:700;color:#0B1D3F;">연사 이름 변경</div>
+            <div style="font-size:12px;color:#475569;margin-top:2px;">
+              <span style="text-decoration:line-through;color:#94a3b8;">${esc(c.oldName)}</span> → <span style="color:#7c3aed;font-weight:700;">${esc(c.newName)}</span>
             </div>
           </div>
         </div>`;
-      }
-      if (c.kind === "speaker") {
-        return `<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 13px;border-radius:8px;margin-bottom:6px;background:#F0FDF4;border:1px solid #BBF7D0;">
+      } else if (c.kind === "speaker") {
+        html += `<div style="display:flex;align-items:flex-start;gap:10px;padding:9px 12px;border-radius:8px;margin-bottom:5px;background:#fff;border:1px solid #BBF7D0;">
           <span style="font-size:18px;">👤</span>
           <div style="flex:1;">
-            <div style="font-size:14px;font-weight:700;color:#0B1D3F;">${esc(c.name)}</div>
-            <div style="font-size:12px;color:#475569;margin-top:3px;">
-              <span style="color:${sColor[c.oldStatus]};">${sLbl[c.oldStatus]}</span>
-              → <span style="color:${sColor[c.newStatus]};font-weight:700;">${sLbl[c.newStatus]}</span>
-              <span style="color:#94a3b8;margin-left:6px;">감지: "${esc(c.kw)}"</span>
+            <div style="font-size:13px;font-weight:700;color:#0B1D3F;">${esc(c.name)}</div>
+            <div style="font-size:12px;color:#475569;margin-top:2px;">
+              <span style="color:${sColor[c.oldStatus]};">${sLbl[c.oldStatus]}</span> → <span style="color:${sColor[c.newStatus]};font-weight:700;">${sLbl[c.newStatus]}</span>
+              <span style="color:#94a3b8;margin-left:6px;font-size:11px;">"${esc(c.kw)}"</span>
             </div>
           </div>
         </div>`;
-      } else {
-        return `<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 13px;border-radius:8px;margin-bottom:6px;background:#F0FDF4;border:1px solid #BBF7D0;">
+      } else if (c.kind === "checklist") {
+        html += `<div style="display:flex;align-items:flex-start;gap:10px;padding:9px 12px;border-radius:8px;margin-bottom:5px;background:#fff;border:1px solid #BBF7D0;">
           <span style="font-size:18px;">✅</span>
           <div style="flex:1;">
-            <div style="font-size:14px;font-weight:700;color:#0B1D3F;">체크리스트 완료 처리</div>
-            <div style="font-size:12px;color:#475569;margin-top:3px;line-height:1.5;">
-              ${esc(c.task)}
-            </div>
-            <div style="font-size:11px;color:#94a3b8;margin-top:2px;">매칭: ${c.matched.slice(0,4).map(m=>esc(m)).join(", ")}</div>
+            <div style="font-size:13px;font-weight:700;color:#0B1D3F;">체크리스트 완료</div>
+            <div style="font-size:12px;color:#475569;margin-top:2px;">${esc(c.task)}</div>
+          </div>
+        </div>`;
+      } else if (c.kind === "checklistAdd") {
+        html += `<div style="display:flex;align-items:flex-start;gap:10px;padding:9px 12px;border-radius:8px;margin-bottom:5px;background:#fff;border:1px solid #BFDBFE;">
+          <span style="font-size:18px;">➕</span>
+          <div style="flex:1;">
+            <div style="font-size:13px;font-weight:700;color:#0B1D3F;">체크리스트 추가</div>
+            <div style="font-size:12px;color:#475569;margin-top:2px;"><span style="background:#EFF6FF;color:#1B4FA0;padding:1px 7px;border-radius:6px;font-weight:600;font-size:11px;">${esc(c.cat)}</span> ${esc(c.task)}</div>
+          </div>
+        </div>`;
+      } else if (c.kind === "budget") {
+        html += `<div style="display:flex;align-items:flex-start;gap:10px;padding:9px 12px;border-radius:8px;margin-bottom:5px;background:#fff;border:1px solid #FDE68A;">
+          <span style="font-size:18px;">💰</span>
+          <div style="flex:1;">
+            <div style="font-size:13px;font-weight:700;color:#0B1D3F;">예산 지출 등록</div>
+            <div style="font-size:12px;color:#475569;margin-top:2px;"><span style="background:#FEF3C7;color:#92400e;padding:1px 7px;border-radius:6px;font-weight:600;font-size:11px;">${esc(c.budgetLabel)}</span> ${esc(c.desc)} · <strong style="color:#92400e;">${krw(c.amount)}</strong></div>
+          </div>
+        </div>`;
+      } else if (c.kind === "todo") {
+        html += `<div style="display:flex;align-items:flex-start;gap:10px;padding:9px 12px;border-radius:8px;margin-bottom:5px;background:#fff;border:1px solid #BAE6FD;">
+          <span style="font-size:18px;">📅</span>
+          <div style="flex:1;">
+            <div style="font-size:13px;font-weight:700;color:#0B1D3F;">To-do 추가</div>
+            <div style="font-size:12px;color:#475569;margin-top:2px;"><span style="background:#E0F2FE;color:#0369a1;padding:1px 7px;border-radius:6px;font-weight:600;font-size:11px;">${esc(c.date)}${c.time?" · "+esc(c.time):""}</span> ${esc(c.task)}</div>
+          </div>
+        </div>`;
+      } else if (c.kind === "error") {
+        html += `<div style="display:flex;align-items:flex-start;gap:10px;padding:9px 12px;border-radius:8px;margin-bottom:5px;background:#FEF2F2;border:1px solid #FECACA;">
+          <span style="font-size:18px;">⚠️</span>
+          <div style="flex:1;">
+            <div style="font-size:13px;font-weight:700;color:#991b1b;">처리 실패</div>
+            <div style="font-size:12px;color:#475569;margin-top:2px;">${esc(c.text)} <span style="color:#991b1b;">— ${esc(c.reason)}</span></div>
           </div>
         </div>`;
       }
-    }).join("")}
-    <div style="margin-top:10px;padding:8px 12px;background:#F8FAFC;border-radius:7px;font-size:11px;color:#64748b;">
-      💡 자동 분석이 부정확하다면 해당 항목을 직접 클릭해 수정해 주세요.
-    </div>
-  </div>`;
+    });
+    html += `</div>`;
+  }
+
+  if (ignored.length > 0) {
+    html += `<div class="card" style="border:1px solid #FECACA;background:#FFF5F5;">
+      <div style="font-size:13px;font-weight:700;color:#991b1b;margin-bottom:8px;">⚠️ 처리하지 못한 명령 (${ignored.length}개)</div>
+      ${ignored.map(t => `<div style="padding:6px 10px;font-size:12px;color:#475569;background:#fff;border-radius:6px;margin-bottom:4px;border:1px solid #FECACA;">${esc(t)}</div>`).join("")}
+      <div style="margin-top:8px;font-size:11px;color:#64748b;line-height:1.7;">
+        💡 명령 예시를 클릭해 보세요. 잘 작동하는 패턴:<br>
+        · "<strong>명찰 제작 완료</strong>" (체크리스트 완료)<br>
+        · "<strong>Yamamoto 확정</strong>" (연사 상태)<br>
+        · "<strong>행사장에 500만원</strong>" (예산 지출)<br>
+        · "<strong>내일 10시 미팅</strong>" (To-do)
+      </div>
+    </div>`;
+  }
+  resEl.innerHTML = html;
 }
+
 
 function fileIcon(type) {
   if(type.includes("pdf")) return "📄";
