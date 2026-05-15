@@ -2034,15 +2034,25 @@ function pageBudget() {
   const openBlocks   = window._budgetOpenBlocks||(window._budgetOpenBlocks={});
 
   let html = `
-  <div class="card" style="padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:#FAFCFF;border:1px solid #BFDBFE;">
-    <div style="flex:1;min-width:200px;">
+  <div class="card" style="padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#FAFCFF;border:1px solid #BFDBFE;">
+    <div style="flex:1;min-width:180px;">
       <div style="font-size:13px;font-weight:700;color:#0B1D3F;">📊 예산 관리</div>
-      <div style="font-size:11px;color:#64748b;margin-top:2px;line-height:1.5;">원본 데이터 기반 · 변동사항 있을 때마다 직접 편집해 업데이트하세요</div>
+      <div style="font-size:11px;color:#64748b;margin-top:2px;line-height:1.5;">
+        ${window._budgetMeta?.fileName ? `📁 ${esc(window._budgetMeta.fileName)} · ${esc(window._budgetMeta.updatedAt||"")}` : "원본 데이터 기반 · 엑셀 가져오기 또는 직접 편집"}
+      </div>
     </div>
-    <button onclick="resetBudget()" style="padding:6px 14px;border-radius:20px;font-size:12px;font-weight:600;background:#FEF2F2;color:#ef4444;border:1px solid #FECACA;cursor:pointer;white-space:nowrap;">
-      🔄 원본 데이터로 초기화
+    <button onclick="downloadBudgetTemplate()" style="padding:6px 12px;border-radius:18px;font-size:11px;font-weight:600;background:#EFF6FF;color:#1B4FA0;border:1px solid #BFDBFE;cursor:pointer;white-space:nowrap;" title="템플릿 다운로드">
+      📥 템플릿
+    </button>
+    <label style="padding:6px 14px;border-radius:18px;cursor:pointer;font-size:12px;font-weight:700;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;border:none;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;">
+      📊 엑셀 가져오기
+      <input type="file" accept=".xlsx,.xls,.csv" style="display:none;" onchange="importBudgetExcel(event)">
+    </label>
+    <button onclick="resetBudget()" style="padding:6px 12px;border-radius:18px;font-size:11px;font-weight:600;background:#FEF2F2;color:#ef4444;border:1px solid #FECACA;cursor:pointer;white-space:nowrap;">
+      🔄 초기화
     </button>
   </div>
+  <div id="budget-import-status"></div>
   <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;">
     ${[{l:"총 예산",v:krw(totalBudget),c:"#1B4FA0"},{l:"실지출 합계",v:krw(totalActual),c:totalActual>totalBudget?"#ef4444":"#0d9488"},{l:"잔여 예산",v:krw(remaining),c:remaining<0?"#ef4444":"#16a34a"},{l:"집행률",v:usedPct+"%",c:usedPct>90?"#ef4444":usedPct>70?"#f59e0b":"#1B4FA0"}]
       .map(({l,v,c})=>`<div class="kpi"><div style="font-size:11px;color:#64748b;font-weight:700;margin-bottom:5px;">${l}</div><div style="font-size:20px;font-weight:800;color:${c};">${v}</div></div>`).join("")}
@@ -3263,6 +3273,187 @@ window.resetData = () => {
     BUDGET_ENTRIES = [];
     scheduleSave();
   }
+};
+
+// ─── 예산 엑셀 템플릿 다운로드 ──────────────────────────
+window.downloadBudgetTemplate = () => {
+  if (typeof XLSX === "undefined") return alert("엑셀 라이브러리 로드 실패. 새로고침 후 다시 시도하세요.");
+  const wb = XLSX.utils.book_new();
+  const budgetSheet = [
+    ["항목ID","항목명","예산(원)","색상"],
+    ["b1","항공·숙박",26444900,"#1B4FA0"],
+    ["b2","행사장",21550000,"#0891b2"],
+    ["b3","사례비",8000000,"#7c3aed"],
+    ["b4","자료집",8830000,"#0d9488"],
+    ["b5","웹캐스팅",8000000,"#b45309"],
+    ["","─ 위 형식대로 행 추가/삭제 가능 ─","",""],
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(budgetSheet), "예산항목");
+  const travelSheet = [
+    ["이름","소속","출발지","항공(원)","호텔(원)","교통(원)","기타(원)","확정여부(Y/N)"],
+    ["Bali Pulendran","Stanford Univ.","California, US",8458000,821000,240000,200000,"Y"],
+    ["Mariatou Tala Jallow","Africa CDC / APPM","Addis Ababa, ET",4900800,554000,240000,200000,"Y"],
+    ["Nakorn Premsri","NVI Thailand","Bangkok, TH",2378200,554000,240000,200000,"Y"],
+    ["Norihisa Yamamoto","JIHS Japan","Tokyo, JP",1054000,554000,240000,200000,"N"],
+    ["Kiat Ruxrungtham","Chulalongkorn Univ.","Bangkok, TH",2378200,554000,240000,200000,"N"],
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(travelSheet), "항공숙박");
+  const entrySheet = [
+    ["항목분류","내역","금액(원)","날짜","지급여부(Y/N)"],
+    ["행사장","현장 보증금",5000000,"2026-05-15","Y"],
+    ["사례비","Pulendran 교수 사례비",3000000,"2026-06-25","N"],
+    ["","─ 위 형식대로 행 추가 ─","","",""],
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(entrySheet), "지출내역");
+  wb.SheetNames.forEach(name => {
+    const ws = wb.Sheets[name];
+    const data = XLSX.utils.sheet_to_json(ws, {header:1});
+    if (data.length > 0) {
+      const maxCols = Math.max(...data.map(r => r.length));
+      ws["!cols"] = Array(maxCols).fill(0).map((_,i) => {
+        const maxLen = Math.max(...data.map(r => String(r[i]||"").length));
+        return {wch: Math.min(40, Math.max(10, maxLen + 2))};
+      });
+    }
+  });
+  XLSX.writeFile(wb, "GVF2026_예산_템플릿.xlsx");
+};
+
+// ─── 예산 엑셀 가져오기 ──────────────────────────────
+window.importBudgetExcel = (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+  if (typeof XLSX === "undefined") return alert("엑셀 라이브러리 로드 실패. 새로고침 후 다시 시도하세요.");
+
+  const statusEl = document.getElementById("budget-import-status");
+  if (statusEl) statusEl.innerHTML = `<div class="card" style="background:#FAFCFF;border:1px solid #BFDBFE;padding:14px;text-align:center;color:#1B4FA0;font-weight:600;">📊 엑셀 파일 분석 중...</div>`;
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const wb = XLSX.read(e.target.result, {type:"array"});
+      const result = {newBudget:[], newTravel:[], newEntries:[], errors:[]};
+
+      const findSheet = (keywords) => {
+        for (const name of wb.SheetNames) {
+          const lower = name.toLowerCase().replace(/[\s·\-_]/g, "");
+          for (const kw of keywords) {
+            if (lower.includes(kw)) return wb.Sheets[name];
+          }
+        }
+        return null;
+      };
+
+      const budgetWS = findSheet(["예산항목","budget","예산"]);
+      if (budgetWS) {
+        const rows = XLSX.utils.sheet_to_json(budgetWS, {header:1, defval:""});
+        for (let i = 1; i < rows.length; i++) {
+          const r = rows[i];
+          const id = String(r[0]||"").trim();
+          const label = String(r[1]||"").trim();
+          const budget = parseInt(String(r[2]||"").replace(/[,\s]/g,"")) || 0;
+          const color = String(r[3]||"#64748b").trim();
+          if (!label || label.startsWith("─") || label.startsWith("-")) continue;
+          if (budget <= 0) continue;
+          result.newBudget.push({id: id || "b_"+Date.now()+"_"+i, label, budget, actual:0, color});
+        }
+      }
+
+      const travelWS = findSheet(["항공숙박","항공","숙박","travel"]);
+      if (travelWS) {
+        const rows = XLSX.utils.sheet_to_json(travelWS, {header:1, defval:""});
+        for (let i = 1; i < rows.length; i++) {
+          const r = rows[i];
+          const name = String(r[0]||"").trim();
+          if (!name || name.startsWith("─") || name.startsWith("-")) continue;
+          result.newTravel.push({
+            id: "t_"+Date.now()+"_"+i+"_"+Math.random().toString(36).slice(2,5),
+            name,
+            org: String(r[1]||"").trim(),
+            from: String(r[2]||"").trim(),
+            flight: parseInt(String(r[3]||"").replace(/[,\s]/g,"")) || 0,
+            hotel:  parseInt(String(r[4]||"").replace(/[,\s]/g,"")) || 0,
+            trans:  parseInt(String(r[5]||"").replace(/[,\s]/g,"")) || 0,
+            misc:   parseInt(String(r[6]||"").replace(/[,\s]/g,"")) || 0,
+            ok: /^(y|yes|확정|true|1|✓|o)$/i.test(String(r[7]||"").trim())
+          });
+        }
+      }
+
+      const entryWS = findSheet(["지출내역","지출","entries","expenses"]);
+      if (entryWS) {
+        const rows = XLSX.utils.sheet_to_json(entryWS, {header:1, defval:""});
+        const labelToId = {};
+        (result.newBudget.length > 0 ? result.newBudget : BUDGET_ITEMS).forEach(b => labelToId[b.label] = b.id);
+        for (let i = 1; i < rows.length; i++) {
+          const r = rows[i];
+          const cat = String(r[0]||"").trim();
+          const desc = String(r[1]||"").trim();
+          const amount = parseInt(String(r[2]||"").replace(/[,\s]/g,"")) || 0;
+          if (!desc || desc.startsWith("─") || desc.startsWith("-") || amount <= 0) continue;
+          const budgetId = labelToId[cat];
+          if (!budgetId) {
+            result.errors.push(`"${cat}" 항목 없음 (지출: ${desc})`);
+            continue;
+          }
+          result.newEntries.push({
+            id: "e_"+Date.now()+"_"+i+"_"+Math.random().toString(36).slice(2,5),
+            budgetId, desc, amount,
+            date: String(r[3]||"").trim() || new Date().toLocaleDateString("ko-KR"),
+            paid: /^(y|yes|지급|완료|true|1|✓|o)$/i.test(String(r[4]||"").trim())
+          });
+        }
+      }
+
+      const hasData = result.newBudget.length + result.newTravel.length + result.newEntries.length;
+      if (hasData === 0) {
+        if (statusEl) statusEl.innerHTML = `<div class="card" style="background:#FEF2F2;border:1px solid #FECACA;padding:14px;">
+          <div style="font-size:13px;font-weight:700;color:#991b1b;margin-bottom:6px;">⚠️ 가져올 데이터를 찾지 못했습니다</div>
+          <div style="font-size:12px;color:#64748b;line-height:1.7;">엑셀 파일에 다음 시트가 있는지 확인하세요:<br>
+          <strong>"예산항목"</strong>, <strong>"항공숙박"</strong>, <strong>"지출내역"</strong><br>
+          📥 템플릿 버튼으로 표준 양식을 받을 수 있습니다.</div>
+        </div>`;
+        event.target.value = "";
+        return;
+      }
+
+      const confirmMsg = `엑셀 파일에서 가져올 내용:\n\n` +
+        `• 예산 항목: ${result.newBudget.length}개\n` +
+        `• 항공·숙박: ${result.newTravel.length}명\n` +
+        `• 지출 내역: ${result.newEntries.length}건\n\n` +
+        `⚠️ 해당 데이터가 있으면 모두 교체됩니다. 계속하시겠습니까?`;
+      if (!confirm(confirmMsg)) {
+        if (statusEl) statusEl.innerHTML = "";
+        event.target.value = "";
+        return;
+      }
+
+      if (result.newBudget.length > 0)  BUDGET_ITEMS = result.newBudget;
+      if (result.newTravel.length > 0)  TRAVEL_DETAIL = result.newTravel;
+      if (result.newEntries.length > 0) BUDGET_ENTRIES = result.newEntries;
+      window._budgetMeta = {
+        fileName: file.name,
+        updatedAt: new Date().toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})
+      };
+      scheduleSave();
+      draw();
+
+      const ns = document.getElementById("budget-import-status");
+      if (ns) ns.innerHTML = `<div class="card" style="background:#F0FDF4;border:1px solid #BBF7D0;padding:14px;">
+        <div style="font-size:13px;font-weight:700;color:#15803d;margin-bottom:6px;">✅ 가져오기 완료: ${esc(file.name)}</div>
+        <div style="font-size:12px;color:#475569;line-height:1.7;">
+          예산 항목 <strong>${result.newBudget.length}개</strong>, 항공·숙박 <strong>${result.newTravel.length}명</strong>, 지출 내역 <strong>${result.newEntries.length}건</strong> 반영됨
+          ${result.errors.length>0?`<br><span style="color:#92400e;">⚠️ ${result.errors.length}건 무시: ${result.errors.slice(0,3).map(esc).join(", ")}${result.errors.length>3?" ...":""}</span>`:""}
+        </div>
+      </div>`;
+    } catch (err) {
+      if (statusEl) statusEl.innerHTML = `<div class="card" style="background:#FEF2F2;border:1px solid #FECACA;padding:14px;">
+        <div style="font-size:13px;font-weight:700;color:#991b1b;">⚠️ 파일 읽기 실패: ${esc(err.message)}</div>
+      </div>`;
+    }
+    event.target.value = "";
+  };
+  reader.readAsArrayBuffer(file);
 };
 
 window.resetBudget = () => {
