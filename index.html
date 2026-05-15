@@ -2038,13 +2038,13 @@ function pageBudget() {
     <div style="flex:1;min-width:180px;">
       <div style="font-size:13px;font-weight:700;color:#0B1D3F;">📊 예산 관리</div>
       <div style="font-size:11px;color:#64748b;margin-top:2px;line-height:1.5;">
-        ${window._budgetMeta?.fileName ? `📁 ${esc(window._budgetMeta.fileName)} · ${esc(window._budgetMeta.updatedAt||"")}` : "원본 데이터 기반 · 엑셀 가져오기 또는 직접 편집"}
+        ${window._budgetMeta?.fileName ? `📁 ${esc(window._budgetMeta.fileName)} · ${esc(window._budgetMeta.updatedAt||"")}` : "어떤 형식의 엑셀이든 자동 감지하여 반영"}
       </div>
     </div>
-    <button onclick="downloadBudgetTemplate()" style="padding:6px 12px;border-radius:18px;font-size:11px;font-weight:600;background:#EFF6FF;color:#1B4FA0;border:1px solid #BFDBFE;cursor:pointer;white-space:nowrap;" title="템플릿 다운로드">
+    <button onclick="downloadBudgetTemplate()" style="padding:6px 12px;border-radius:18px;font-size:11px;font-weight:600;background:#EFF6FF;color:#1B4FA0;border:1px solid #BFDBFE;cursor:pointer;white-space:nowrap;" title="템플릿 다운로드 (선택사항)">
       📥 템플릿
     </button>
-    <label style="padding:6px 14px;border-radius:18px;cursor:pointer;font-size:12px;font-weight:700;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;border:none;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;">
+    <label style="padding:6px 14px;border-radius:18px;cursor:pointer;font-size:12px;font-weight:700;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;border:none;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;" title="아무 엑셀 파일이나 업로드 — 헤더로 자동 감지">
       📊 엑셀 가져오기
       <input type="file" accept=".xlsx,.xls,.csv" style="display:none;" onchange="importBudgetExcel(event)">
     </label>
@@ -3319,7 +3319,8 @@ window.downloadBudgetTemplate = () => {
   XLSX.writeFile(wb, "GVF2026_예산_템플릿.xlsx");
 };
 
-// ─── 예산 엑셀 가져오기 ──────────────────────────────
+// ─── 예산 엑셀 가져오기 (자동 감지) ───────────────────
+// 어떤 형식의 엑셀이든 헤더를 분석해 자동 매핑
 window.importBudgetExcel = (event) => {
   const file = event.target.files[0];
   if (!file) return;
@@ -3332,96 +3333,153 @@ window.importBudgetExcel = (event) => {
   reader.onload = (e) => {
     try {
       const wb = XLSX.read(e.target.result, {type:"array"});
-      const result = {newBudget:[], newTravel:[], newEntries:[], errors:[]};
+      const result = {newBudget:[], newTravel:[], newEntries:[], errors:[], detected:[]};
 
-      const findSheet = (keywords) => {
-        for (const name of wb.SheetNames) {
-          const lower = name.toLowerCase().replace(/[\s·\-_]/g, "");
-          for (const kw of keywords) {
-            if (lower.includes(kw)) return wb.Sheets[name];
+      // 시트별 의미 자동 추론
+      wb.SheetNames.forEach(sheetName => {
+        const ws = wb.Sheets[sheetName];
+        const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:""});
+        if (rows.length < 2) return;
+
+        // 헤더 행 찾기 (실제 데이터가 있는 첫 행 직전)
+        let headerIdx = -1;
+        for (let i = 0; i < Math.min(5, rows.length); i++) {
+          const r = rows[i].map(c => String(c||"").trim()).filter(c => c);
+          if (r.length >= 2) { headerIdx = i; break; }
+        }
+        if (headerIdx === -1) return;
+        const headers = rows[headerIdx].map(h => String(h||"").trim().toLowerCase());
+        const dataRows = rows.slice(headerIdx + 1);
+
+        // 헤더 매핑 함수
+        const findCol = (keywords) => {
+          for (let i = 0; i < headers.length; i++) {
+            const h = headers[i].replace(/[\s·\-_(),원\/]/g, "");
+            for (const kw of keywords) {
+              if (h.includes(kw)) return i;
+            }
           }
-        }
-        return null;
-      };
+          return -1;
+        };
 
-      const budgetWS = findSheet(["예산항목","budget","예산"]);
-      if (budgetWS) {
-        const rows = XLSX.utils.sheet_to_json(budgetWS, {header:1, defval:""});
-        for (let i = 1; i < rows.length; i++) {
-          const r = rows[i];
-          const id = String(r[0]||"").trim();
-          const label = String(r[1]||"").trim();
-          const budget = parseInt(String(r[2]||"").replace(/[,\s]/g,"")) || 0;
-          const color = String(r[3]||"#64748b").trim();
-          if (!label || label.startsWith("─") || label.startsWith("-")) continue;
-          if (budget <= 0) continue;
-          result.newBudget.push({id: id || "b_"+Date.now()+"_"+i, label, budget, actual:0, color});
-        }
-      }
+        const parseAmount = (v) => {
+          if (typeof v === "number") return Math.round(v);
+          const s = String(v||"").replace(/[,₩\s원]/g, "");
+          let n = parseFloat(s) || 0;
+          if (/만원|만/.test(String(v))) n *= 10000;
+          if (/억/.test(String(v))) n *= 100000000;
+          return Math.round(n);
+        };
 
-      const travelWS = findSheet(["항공숙박","항공","숙박","travel"]);
-      if (travelWS) {
-        const rows = XLSX.utils.sheet_to_json(travelWS, {header:1, defval:""});
-        for (let i = 1; i < rows.length; i++) {
-          const r = rows[i];
-          const name = String(r[0]||"").trim();
-          if (!name || name.startsWith("─") || name.startsWith("-")) continue;
-          result.newTravel.push({
-            id: "t_"+Date.now()+"_"+i+"_"+Math.random().toString(36).slice(2,5),
-            name,
-            org: String(r[1]||"").trim(),
-            from: String(r[2]||"").trim(),
-            flight: parseInt(String(r[3]||"").replace(/[,\s]/g,"")) || 0,
-            hotel:  parseInt(String(r[4]||"").replace(/[,\s]/g,"")) || 0,
-            trans:  parseInt(String(r[5]||"").replace(/[,\s]/g,"")) || 0,
-            misc:   parseInt(String(r[6]||"").replace(/[,\s]/g,"")) || 0,
-            ok: /^(y|yes|확정|true|1|✓|o)$/i.test(String(r[7]||"").trim())
+        const parseYN = (v) => /^(y|yes|확정|완료|지급|true|1|✓|o|✅)$/i.test(String(v||"").trim());
+
+        // ▼ 시트 의미 자동 추론 ─────────────────
+        const colLabel  = findCol(["항목명","항목","name","label","분류","카테고리","목적"]);
+        const colBudget = findCol(["예산","budget","계획"]);
+        const colId     = findCol(["항목id","id","코드"]);
+        const colColor  = findCol(["색상","color"]);
+
+        const colName   = findCol(["이름","name","참석자","연사","speaker"]);
+        const colOrg    = findCol(["소속","org","기관","회사","institution"]);
+        const colFrom   = findCol(["출발","from","도시","origin"]);
+        const colFlight = findCol(["항공","flight","비행"]);
+        const colHotel  = findCol(["호텔","hotel","숙박","accommodation"]);
+        const colTrans  = findCol(["교통","trans","transport"]);
+        const colMisc   = findCol(["기타","misc","other"]);
+        const colOk     = findCol(["확정","ok","status","상태"]);
+
+        const colCat    = findCol(["항목분류","분류","category","항목","대분류"]);
+        const colDesc   = findCol(["내역","desc","항목명","상세","details","적요"]);
+        const colAmt    = findCol(["금액","amount","액","비용","total"]);
+        const colDate   = findCol(["날짜","date","일자","월일"]);
+        const colPaid   = findCol(["지급","paid","결제","status"]);
+
+        // 시트 유형 판단
+        const hasTravelCols = colName !== -1 && (colFlight !== -1 || colHotel !== -1);
+        const hasEntryCols  = colDesc !== -1 && colAmt !== -1 && colName === -1;
+        const hasBudgetCols = colLabel !== -1 && colBudget !== -1 && !hasTravelCols && !hasEntryCols;
+
+        if (hasTravelCols) {
+          let count = 0;
+          dataRows.forEach((r, i) => {
+            const name = String(r[colName]||"").trim();
+            if (!name || /^[─\-=].*|.*─$/.test(name)) return;
+            result.newTravel.push({
+              id: "t_"+Date.now()+"_"+i+"_"+Math.random().toString(36).slice(2,5),
+              name,
+              org:  colOrg  !== -1 ? String(r[colOrg]||"").trim() : "",
+              from: colFrom !== -1 ? String(r[colFrom]||"").trim() : "",
+              flight: colFlight !== -1 ? parseAmount(r[colFlight]) : 0,
+              hotel:  colHotel  !== -1 ? parseAmount(r[colHotel])  : 0,
+              trans:  colTrans  !== -1 ? parseAmount(r[colTrans])  : 0,
+              misc:   colMisc   !== -1 ? parseAmount(r[colMisc])   : 0,
+              ok:     colOk     !== -1 ? parseYN(r[colOk]) : false,
+            });
+            count++;
           });
-        }
-      }
-
-      const entryWS = findSheet(["지출내역","지출","entries","expenses"]);
-      if (entryWS) {
-        const rows = XLSX.utils.sheet_to_json(entryWS, {header:1, defval:""});
-        const labelToId = {};
-        (result.newBudget.length > 0 ? result.newBudget : BUDGET_ITEMS).forEach(b => labelToId[b.label] = b.id);
-        for (let i = 1; i < rows.length; i++) {
-          const r = rows[i];
-          const cat = String(r[0]||"").trim();
-          const desc = String(r[1]||"").trim();
-          const amount = parseInt(String(r[2]||"").replace(/[,\s]/g,"")) || 0;
-          if (!desc || desc.startsWith("─") || desc.startsWith("-") || amount <= 0) continue;
-          const budgetId = labelToId[cat];
-          if (!budgetId) {
-            result.errors.push(`"${cat}" 항목 없음 (지출: ${desc})`);
-            continue;
-          }
-          result.newEntries.push({
-            id: "e_"+Date.now()+"_"+i+"_"+Math.random().toString(36).slice(2,5),
-            budgetId, desc, amount,
-            date: String(r[3]||"").trim() || new Date().toLocaleDateString("ko-KR"),
-            paid: /^(y|yes|지급|완료|true|1|✓|o)$/i.test(String(r[4]||"").trim())
+          if (count > 0) result.detected.push(`✈️ "${sheetName}" → 항공·숙박 ${count}명`);
+        } else if (hasEntryCols) {
+          let count = 0;
+          dataRows.forEach((r, i) => {
+            const desc = String(r[colDesc]||"").trim();
+            const amt = parseAmount(r[colAmt]);
+            if (!desc || amt <= 0 || /^[─\-=]/.test(desc)) return;
+            const catName = colCat !== -1 ? String(r[colCat]||"").trim() : "";
+            // 카테고리 매칭: 새 예산 항목 OR 기존 BUDGET_ITEMS에서 찾기
+            const allBudgets = result.newBudget.length > 0 ? result.newBudget : BUDGET_ITEMS;
+            let budgetId = "";
+            if (catName) {
+              const found = allBudgets.find(b => b.label === catName || catName.includes(b.label) || b.label.includes(catName));
+              if (found) budgetId = found.id;
+            }
+            if (!budgetId && allBudgets.length > 0) budgetId = allBudgets[0].id;
+            if (!budgetId) {
+              result.errors.push(`"${desc}" - 항목 분류를 찾지 못함`);
+              return;
+            }
+            result.newEntries.push({
+              id: "e_"+Date.now()+"_"+i+"_"+Math.random().toString(36).slice(2,5),
+              budgetId, desc, amount:amt,
+              date: colDate !== -1 ? String(r[colDate]||"").trim() : "",
+              paid: colPaid !== -1 ? parseYN(r[colPaid]) : false,
+            });
+            count++;
           });
+          if (count > 0) result.detected.push(`💰 "${sheetName}" → 지출 내역 ${count}건`);
+        } else if (hasBudgetCols) {
+          let count = 0;
+          dataRows.forEach((r, i) => {
+            const label = String(r[colLabel]||"").trim();
+            if (!label || /^[─\-=]/.test(label)) return;
+            const budget = parseAmount(r[colBudget]);
+            if (budget <= 0) return;
+            const id = colId !== -1 ? String(r[colId]||"").trim() : "";
+            const color = colColor !== -1 ? String(r[colColor]||"#64748b").trim() : ["#1B4FA0","#0891b2","#7c3aed","#0d9488","#b45309","#16a34a","#dc2626"][result.newBudget.length % 7];
+            result.newBudget.push({id: id || "b_"+Date.now()+"_"+i, label, budget, actual:0, color});
+            count++;
+          });
+          if (count > 0) result.detected.push(`📊 "${sheetName}" → 예산 항목 ${count}개`);
         }
-      }
+      });
 
       const hasData = result.newBudget.length + result.newTravel.length + result.newEntries.length;
       if (hasData === 0) {
         if (statusEl) statusEl.innerHTML = `<div class="card" style="background:#FEF2F2;border:1px solid #FECACA;padding:14px;">
-          <div style="font-size:13px;font-weight:700;color:#991b1b;margin-bottom:6px;">⚠️ 가져올 데이터를 찾지 못했습니다</div>
-          <div style="font-size:12px;color:#64748b;line-height:1.7;">엑셀 파일에 다음 시트가 있는지 확인하세요:<br>
-          <strong>"예산항목"</strong>, <strong>"항공숙박"</strong>, <strong>"지출내역"</strong><br>
-          📥 템플릿 버튼으로 표준 양식을 받을 수 있습니다.</div>
+          <div style="font-size:13px;font-weight:700;color:#991b1b;margin-bottom:8px;">⚠️ 가져올 데이터를 찾지 못했습니다</div>
+          <div style="font-size:12px;color:#64748b;line-height:1.7;">
+            엑셀 파일의 컬럼 헤더를 확인해 주세요. 다음 단어 중 하나가 포함되어야 합니다:<br>
+            • <strong>예산 항목</strong>: "항목명" + "예산"<br>
+            • <strong>항공·숙박</strong>: "이름" + "항공" 또는 "호텔"<br>
+            • <strong>지출 내역</strong>: "내역" + "금액"<br>
+            ${result.errors.length > 0 ? `<br><span style="color:#92400e;">⚠️ ${result.errors.length}건 오류: ${result.errors.slice(0,3).map(esc).join(", ")}</span>` : ""}
+          </div>
         </div>`;
         event.target.value = "";
         return;
       }
 
-      const confirmMsg = `엑셀 파일에서 가져올 내용:\n\n` +
-        `• 예산 항목: ${result.newBudget.length}개\n` +
-        `• 항공·숙박: ${result.newTravel.length}명\n` +
-        `• 지출 내역: ${result.newEntries.length}건\n\n` +
-        `⚠️ 해당 데이터가 있으면 모두 교체됩니다. 계속하시겠습니까?`;
+      const detected = result.detected.join("<br>");
+      const confirmMsg = `📋 자동 감지된 내용:\n\n${result.detected.join("\n")}\n\n⚠️ 해당 데이터가 있으면 모두 교체됩니다. 계속하시겠습니까?`;
       if (!confirm(confirmMsg)) {
         if (statusEl) statusEl.innerHTML = "";
         event.target.value = "";
@@ -3440,9 +3498,8 @@ window.importBudgetExcel = (event) => {
 
       const ns = document.getElementById("budget-import-status");
       if (ns) ns.innerHTML = `<div class="card" style="background:#F0FDF4;border:1px solid #BBF7D0;padding:14px;">
-        <div style="font-size:13px;font-weight:700;color:#15803d;margin-bottom:6px;">✅ 가져오기 완료: ${esc(file.name)}</div>
-        <div style="font-size:12px;color:#475569;line-height:1.7;">
-          예산 항목 <strong>${result.newBudget.length}개</strong>, 항공·숙박 <strong>${result.newTravel.length}명</strong>, 지출 내역 <strong>${result.newEntries.length}건</strong> 반영됨
+        <div style="font-size:13px;font-weight:700;color:#15803d;margin-bottom:8px;">✅ 가져오기 완료: ${esc(file.name)}</div>
+        <div style="font-size:12px;color:#475569;line-height:1.7;">${detected}
           ${result.errors.length>0?`<br><span style="color:#92400e;">⚠️ ${result.errors.length}건 무시: ${result.errors.slice(0,3).map(esc).join(", ")}${result.errors.length>3?" ...":""}</span>`:""}
         </div>
       </div>`;
