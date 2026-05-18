@@ -121,6 +121,7 @@ input[type=date]{font-size:16px !important;}
 .ci{padding:10px 10px;}
 .ck{width:20px;height:20px;}
 }
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.6;}}
 </style>
 </head>
 <body>
@@ -146,6 +147,7 @@ input[type=date]{font-size:16px !important;}
         <div id="sb-pb" style="height:100%;background:linear-gradient(90deg,#60A5FA,#34D399);border-radius:99px;width:0;transition:width .4s;"></div>
       </div>
     </div>
+    <div id="sb-next-ms" onclick="goPage('home')" style="display:none;margin:8px 10px 0;padding:9px 11px;background:linear-gradient(135deg,rgba(96,165,250,.15),rgba(52,211,153,.1));border:1px solid rgba(96,165,250,.25);border-radius:10px;cursor:pointer;"></div>
     <div class="sync-box" id="sync-status"></div>
     <div class="urg-box" id="urg-box" onclick="goPage('checklist')" style="display:none;"></div>
     <div id="sb-menu-area" style="padding-top:8px;"></div>
@@ -283,6 +285,42 @@ let CL = DEFAULT_CL.map(t=>({...t}));
 let SP = DEFAULT_SP.map(s=>({...s}));
 let DAILY_TODOS = {}; // {YYYY-MM-DD: [{id, task, done, time}, ...]}
 
+// ─── 홈 화면 마일스톤 (편집 가능) ───────────────────
+// cats: 연동될 체크리스트 카테고리 배열 (진행률 자동 계산)
+const DEFAULT_MILESTONES = [
+  {id:1, title:"기획 & 예산",   deadline:"2026-05-10", cats:["예산·행정"]},
+  {id:2, title:"연사 & 아젠다", deadline:"2026-05-22", cats:["연사 섭외"]},
+  {id:3, title:"행사장 점검",   deadline:"2026-05-31", cats:["장소 준비","Logistics"]},
+  {id:4, title:"참석자 모집",   deadline:"2026-06-12", cats:["홍보·등록"]},
+  {id:5, title:"최종 리허설",   deadline:"2026-06-24", cats:["항공·숙박","Logistics"]},
+];
+let MILESTONES = JSON.parse(JSON.stringify(DEFAULT_MILESTONES));
+let msEditMode = false;
+
+// 마일스톤 진행률 계산 (연결된 카테고리의 완료율 평균)
+function calcMsProgress(m) {
+  if (!m.cats || m.cats.length === 0) return null;
+  const items = CL.filter(t => m.cats.includes(t.cat));
+  if (items.length === 0) return 0;
+  return pct(items.filter(t => t.done).length, items.length);
+}
+
+// 다음 마일스톤 찾기 (사이드바 표시용)
+function getNextMilestone() {
+  const today0 = new Date(); today0.setHours(0,0,0,0);
+  const todayMs = today0.getTime();
+  for (const m of MILESTONES) {
+    if (!m.deadline) continue;
+    const [y,mo,d] = m.deadline.split("-").map(Number);
+    const ms = new Date(y, mo-1, d).getTime();
+    if (ms >= todayMs) {
+      const dday = Math.round((ms - todayMs) / 86400000);
+      return {...m, dday};
+    }
+  }
+  return null;
+}
+
 // ─── 사이드바 메뉴 (편집 가능) ───────────────────────
 const DEFAULT_SIDEBAR_MENU = [
   {group: "메인 메뉴", items: [
@@ -353,6 +391,7 @@ function initFirebase(cfg) {
       if (d.be && Array.isArray(d.be))  BUDGET_ENTRIES= d.be;
       if (d.dt && typeof d.dt === "object") DAILY_TODOS = d.dt;
       if (d.sm && Array.isArray(d.sm))       SIDEBAR_MENU = d.sm;
+      if (d.ms && Array.isArray(d.ms))       MILESTONES = d.ms;
       // Firestore에서 사이드바 메뉴를 받았다면 현재 페이지 제목도 갱신
       const ttlEl = document.getElementById("pg-ttl");
       if (ttlEl) ttlEl.textContent = getPageTitle(curPage);
@@ -390,6 +429,7 @@ async function saveToFirestore() {
       be: BUDGET_ENTRIES,
       dt: DAILY_TODOS,
       sm: SIDEBAR_MENU,
+      ms: MILESTONES,
       agendaHtml: AGENDA_HTML,
       agendaMeta: AGENDA_META,
       savedAt: now,
@@ -507,6 +547,33 @@ function updateSidebar() {
   if(pbEl) pbEl.style.width=ov+"%";
   if(progPill) progPill.textContent="진행률 "+ov+"%";
   if(urgBox) { urgBox.style.display=urgCnt>0?"flex":"none"; urgBox.innerHTML="🚨 긴급 처리 "+urgCnt+"건"; }
+  // 다음 마일스톤 표시
+  const nmsEl = document.getElementById("sb-next-ms");
+  if (nmsEl) {
+    const nms = getNextMilestone();
+    if (nms) {
+      const progress = calcMsProgress(nms);
+      const urgentClass = nms.dday <= 7 ? "color:#FCA5A5;" : "color:#60A5FA;";
+      nmsEl.style.display = "block";
+      nmsEl.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
+          <span style="font-size:10px;font-weight:700;color:rgba(255,255,255,.5);letter-spacing:.05em;">▶ 다음 마일스톤</span>
+          <span style="font-size:13px;font-weight:800;${urgentClass}">D-${nms.dday}</span>
+        </div>
+        <div style="font-size:12px;font-weight:700;color:#fff;margin-bottom:${progress!==null?'5px':'0'};line-height:1.3;">${esc(nms.title)}</div>
+        ${progress !== null ? `
+          <div style="display:flex;justify-content:space-between;font-size:9px;color:rgba(255,255,255,.45);margin-bottom:3px;">
+            <span>${esc((nms.cats||[]).join(" · "))}</span>
+            <span style="color:#60A5FA;font-weight:700;">${progress}%</span>
+          </div>
+          <div style="height:3px;background:rgba(255,255,255,.08);border-radius:99px;overflow:hidden;">
+            <div style="height:100%;width:${progress}%;background:linear-gradient(90deg,#60A5FA,#34D399);border-radius:99px;transition:width .4s;"></div>
+          </div>` : ''}
+      `;
+    } else {
+      nmsEl.style.display = "none";
+    }
+  }
   renderSidebarMenu();
 }
 
@@ -584,6 +651,92 @@ window.moveSbItem = (gi, ii, dir) => {
   scheduleSave(); renderSidebarMenu();
 };
 window.resetSbMenu = () => { if(confirm("사이드바 메뉴를 기본값으로 되돌립니다.")){SIDEBAR_MENU=JSON.parse(JSON.stringify(DEFAULT_SIDEBAR_MENU));scheduleSave();renderSidebarMenu();} };
+
+// ─── 마일스톤 편집 핸들러 ─────────────────────────────
+window.toggleMsEdit = () => { msEditMode = !msEditMode; draw(); };
+window.setMsField = (idx, key, val) => {
+  if (!MILESTONES[idx]) return;
+  MILESTONES[idx][key] = val.trim();
+  scheduleSave();
+  draw();
+};
+window.moveMs = (idx, dir) => {
+  const target = idx + dir;
+  if (target < 0 || target >= MILESTONES.length) return;
+  [MILESTONES[idx], MILESTONES[target]] = [MILESTONES[target], MILESTONES[idx]];
+  scheduleSave();
+  draw();
+};
+window.delMs = (idx) => {
+  if (MILESTONES.length <= 2) return;
+  if (!confirm(`"${MILESTONES[idx].title}" 단계를 삭제하시겠습니까?`)) return;
+  MILESTONES.splice(idx, 1);
+  scheduleSave();
+  draw();
+};
+window.addMs = () => {
+  if (MILESTONES.length >= 7) return;
+  const newId = Math.max(0, ...MILESTONES.map(m => m.id||0)) + 1;
+  MILESTONES.push({id: newId, title: "새 단계", deadline: ""});
+  scheduleSave();
+  draw();
+};
+window.resetMs = () => {
+  if (!confirm("마일스톤을 기본값으로 되돌립니다.")) return;
+  MILESTONES = JSON.parse(JSON.stringify(DEFAULT_MILESTONES));
+  scheduleSave();
+  draw();
+};
+
+// 마일스톤 클릭 → 관련 체크리스트만 필터링하여 보기
+window.openMilestone = (idx) => {
+  const m = MILESTONES[idx];
+  if (!m || !m.cats || m.cats.length === 0) return;
+  window._clFilterCats = m.cats; // 체크리스트 페이지에서 필터로 사용
+  window._clFilterMs = m.title;
+  goPage('checklist');
+};
+
+// 마일스톤-카테고리 매핑 토글
+window.toggleMsCat = (idx, cat) => {
+  const m = MILESTONES[idx];
+  if (!m) return;
+  if (!m.cats) m.cats = [];
+  const i = m.cats.indexOf(cat);
+  if (i >= 0) m.cats.splice(i, 1);
+  else m.cats.push(cat);
+  scheduleSave();
+  draw();
+};
+
+// D-7 이내 마일스톤을 To-do로 자동 추가
+window.syncMsToTodos = () => {
+  const today0 = new Date(); today0.setHours(0,0,0,0);
+  const todayMs = today0.getTime();
+  let added = 0, existed = 0;
+  MILESTONES.forEach(m => {
+    if (!m.deadline) return;
+    const [y,mo,d] = m.deadline.split("-").map(Number);
+    const targetMs = new Date(y, mo-1, d).getTime();
+    const dday = Math.round((targetMs - todayMs) / 86400000);
+    if (dday < 0 || dday > 7) return;
+    // 마감일 To-do 추가
+    if (!DAILY_TODOS[m.deadline]) DAILY_TODOS[m.deadline] = [];
+    const taskText = `🏁 마일스톤 마감: ${m.title}`;
+    const exists = DAILY_TODOS[m.deadline].some(t => t.task === taskText);
+    if (exists) { existed++; return; }
+    DAILY_TODOS[m.deadline].push({
+      id: "mst_" + m.id + "_" + Date.now(),
+      task: taskText,
+      done: false,
+      time: ""
+    });
+    added++;
+  });
+  scheduleSave();
+  draw();
+  alert(`✅ ${added}건 To-do 추가됨${existed > 0 ? ` (이미 등록된 ${existed}건은 건너뜀)` : ''}\n\nTo-do List 페이지에서 확인하세요.`);
+};
 
 function openSidebar() {
   document.getElementById("sidebar").classList.add("open");
@@ -826,13 +979,38 @@ function pageTodo() {
       <div style="font-size:32px;margin-bottom:8px;">📝</div>
       <div style="font-size:14px;font-weight:600;margin-bottom:4px;">이 날짜에 할 일이 없습니다</div>
       <div style="font-size:12px;">위 입력창에 할 일을 추가해 보세요</div>
-    </div>` : todos.map((t, idx) => `
-    <div style="display:flex;align-items:center;gap:10px;padding:10px 6px;border-bottom:${idx<todos.length-1?'1px solid #F1F5F9':'none'};background:${t.done?'#F0FDF4':'transparent'};border-radius:6px;">
-      <div onclick="toggleTodo('${ds}','${t.id}')" class="ck ${t.done?'on':''}">${t.done?'✓':''}</div>
-      ${t.time ? `<span style="font-size:11px;font-weight:700;color:#1B4FA0;background:#EFF6FF;padding:2px 8px;border-radius:8px;min-width:50px;text-align:center;">${esc(t.time)}</span>` : ""}
-      <span style="flex:1;font-size:13px;color:${t.done?'#94a3b8':'#1e293b'};text-decoration:${t.done?'line-through':'none'};line-height:1.5;cursor:pointer;" onclick="toggleTodo('${ds}','${t.id}')">${esc(t.task)}</span>
-      <button onclick="delTodo('${ds}','${t.id}')" style="background:none;border:none;cursor:pointer;font-size:14px;color:#fca5a5;padding:2px 6px;">🗑</button>
-    </div>`).join("")}
+    </div>` : (() => {
+      const showDone = window._showDoneTodos === true;
+      const activeTodos = todos.filter(t => !t.done);
+      const doneTodos = todos.filter(t => t.done);
+      const visibleTodos = showDone ? todos : activeTodos;
+      const todoRow = (t, idx, lst) => `
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 6px;border-bottom:${idx<lst.length-1?'1px solid #F1F5F9':'none'};background:${t.done?'#F0FDF4':'transparent'};border-radius:6px;">
+        <div onclick="toggleTodo('${ds}','${t.id}')" class="ck ${t.done?'on':''}">${t.done?'✓':''}</div>
+        ${t.time ? `<span style="font-size:11px;font-weight:700;color:#1B4FA0;background:#EFF6FF;padding:2px 8px;border-radius:8px;min-width:50px;text-align:center;">${esc(t.time)}</span>` : ""}
+        <span style="flex:1;font-size:13px;color:${t.done?'#94a3b8':'#1e293b'};text-decoration:${t.done?'line-through':'none'};line-height:1.5;cursor:pointer;" onclick="toggleTodo('${ds}','${t.id}')">${esc(t.task)}</span>
+        <button onclick="delTodo('${ds}','${t.id}')" style="background:none;border:none;cursor:pointer;font-size:14px;color:#fca5a5;padding:2px 6px;">🗑</button>
+      </div>`;
+      let body = activeTodos.length === 0 && !showDone
+        ? `<div style="text-align:center;padding:30px 20px;color:#94a3b8;">
+            <div style="font-size:28px;margin-bottom:6px;">🎉</div>
+            <div style="font-size:13px;font-weight:600;">모든 할 일을 완료했습니다!</div>
+            ${doneTodos.length > 0 ? `<div style="font-size:11px;margin-top:4px;">완료된 ${doneTodos.length}개는 아래 토글로 확인하세요</div>` : ""}
+          </div>`
+        : activeTodos.map((t,i) => todoRow(t,i,activeTodos)).join("");
+      if (showDone && doneTodos.length > 0) {
+        body += `<div style="font-size:10px;font-weight:700;color:#94a3b8;padding:8px 6px 4px;letter-spacing:.05em;border-top:1px dashed #E2E8F0;margin-top:6px;">✅ 완료된 항목</div>`;
+        body += doneTodos.map((t,i) => todoRow(t,i,doneTodos)).join("");
+      }
+      // 토글 푸터 (완료된 항목이 있을 때만)
+      const footer = doneTodos.length > 0 ? `
+        <div style="display:flex;justify-content:center;margin-top:10px;padding-top:8px;border-top:1px solid #F1F5F9;">
+          <button onclick="window._showDoneTodos=${!showDone};draw()" style="padding:5px 14px;border-radius:14px;background:#F8FAFC;color:#64748b;border:1px solid #E2E8F0;cursor:pointer;font-size:11px;font-weight:600;">
+            ${showDone ? `🙈 완료된 ${doneTodos.length}개 숨기기` : `👁 완료된 ${doneTodos.length}개 보기`}
+          </button>
+        </div>` : "";
+      return body + footer;
+    })()}
   </div>`;
 }
 
@@ -872,6 +1050,12 @@ window.delTodo = (ds, id) => {
   scheduleSave();
 };
 
+window.toggleShowDone = (cat) => {
+  window._showDoneCl = window._showDoneCl || {};
+  window._showDoneCl[cat] = !window._showDoneCl[cat];
+  draw();
+};
+
 // ═══════════════════════════════════════════════════════════
 //   페이지 — 홈
 // ═══════════════════════════════════════════════════════════
@@ -885,7 +1069,124 @@ function pageHome() {
     return Math.round((new Date(y,mo-1,d)-today0)/86400000)<=7;
   });
   const catSt=CATS.map(cat=>{const it=CL.filter(t=>t.cat===cat),d=it.filter(t=>t.done).length;return{cat,d,t:it.length,p:pct(d,it.length)};});
-  return `
+
+  // ── 마일스톤 (전역 변수 MILESTONES 사용, 날짜로 상태 자동 결정) ─────
+  const todayMs = today0.getTime();
+  let currentSet = false;
+  const msWithStatus = MILESTONES.map(m => {
+    const [y,mo,d] = (m.deadline||"").split("-").map(Number);
+    const ms = (y && mo && d) ? new Date(y, mo-1, d).getTime() : 0;
+    let status;
+    if (!ms || ms < todayMs) status = "completed";
+    else if (!currentSet) { status = "current"; currentSet = true; }
+    else status = "upcoming";
+    // 표시용 짧은 날짜 (MM.DD)
+    const dateLabel = m.deadline ? m.deadline.slice(5).replace("-",".") : "";
+    return {...m, status, dateLabel};
+  });
+  const currentIdx = msWithStatus.findIndex(m => m.status === "current");
+  const progressPercent = currentIdx >= 0
+    ? (currentIdx / (msWithStatus.length - 1)) * 100
+    : 100;
+
+  // ── 편집 모드 UI ─────
+  if (msEditMode) {
+    const editHtml = `
+    <div class="card" style="background:#FAFCFF;border:2px solid #1B4FA0;padding:16px 18px;margin-bottom:14px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <div>
+          <div style="font-size:14px;font-weight:700;color:#1B4FA0;">✏️ 마일스톤 편집 모드</div>
+          <div style="font-size:11px;color:#64748b;margin-top:2px;">단계명·마감일을 자유롭게 수정하세요 · 변경 즉시 저장</div>
+        </div>
+        <button onclick="toggleMsEdit()" style="padding:6px 14px;border-radius:20px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;border:none;cursor:pointer;font-size:12px;font-weight:700;">✅ 편집 완료</button>
+      </div>
+      ${MILESTONES.map((m, idx) => `
+        <div style="background:#fff;border-radius:8px;margin-bottom:8px;border:1px solid #E2E8F0;padding:10px 12px;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:#EFF6FF;color:#1B4FA0;font-size:12px;font-weight:800;flex-shrink:0;">${idx+1}</span>
+            <input value="${esc(m.title)}" onchange="setMsField(${idx},'title',this.value)" placeholder="단계 이름" style="flex:1;min-width:0;padding:6px 10px;border-radius:6px;border:1.5px solid #E2E8F0;font-size:13px;outline:none;">
+            <input type="date" value="${esc(m.deadline)}" onchange="setMsField(${idx},'deadline',this.value)" style="padding:6px 8px;border-radius:6px;border:1.5px solid #E2E8F0;font-size:12px;outline:none;width:140px;">
+            <button onclick="moveMs(${idx},-1)" title="위로" ${idx===0?'disabled':''} style="background:none;border:none;cursor:${idx===0?'not-allowed':'pointer'};color:${idx===0?'#CBD5E1':'#64748b'};font-size:14px;padding:2px 5px;">▲</button>
+            <button onclick="moveMs(${idx},1)" title="아래로" ${idx===MILESTONES.length-1?'disabled':''} style="background:none;border:none;cursor:${idx===MILESTONES.length-1?'not-allowed':'pointer'};color:${idx===MILESTONES.length-1?'#CBD5E1':'#64748b'};font-size:14px;padding:2px 5px;">▼</button>
+            <button onclick="delMs(${idx})" title="삭제" ${MILESTONES.length<=2?'disabled':''} style="background:none;border:none;cursor:${MILESTONES.length<=2?'not-allowed':'pointer'};color:${MILESTONES.length<=2?'#CBD5E1':'#fca5a5'};font-size:14px;padding:2px 5px;">🗑</button>
+          </div>
+          <div style="margin-top:8px;padding-top:8px;border-top:1px dashed #E2E8F0;">
+            <div style="font-size:10px;color:#64748b;font-weight:700;margin-bottom:5px;">🔗 연결된 체크리스트 카테고리 (클릭으로 토글)</div>
+            <div style="display:flex;flex-wrap:wrap;gap:4px;">
+              ${CATS.map(c => {
+                const checked = (m.cats||[]).includes(c);
+                return `<span onclick="toggleMsCat(${idx},'${c.replace(/'/g,"\\'")}')"  style="cursor:pointer;font-size:10px;padding:3px 9px;border-radius:10px;background:${checked?'#1B4FA0':'#F1F5F9'};color:${checked?'#fff':'#64748b'};border:1px solid ${checked?'#1B4FA0':'#E2E8F0'};font-weight:${checked?'700':'500'};">${checked?'✓ ':''}${esc(c)}</span>`;
+              }).join('')}
+            </div>
+          </div>
+        </div>
+      `).join('')}
+      <div style="background:#FAFBFF;border:1px dashed #BFDBFE;border-radius:8px;padding:9px 12px;margin-bottom:8px;display:flex;align-items:center;gap:10px;">
+        <span style="font-size:11px;flex:1;color:#1B4FA0;font-weight:600;">📅 마감일이 임박한 마일스톤(D-7 이내)을 To-do로 자동 추가</span>
+        <button onclick="syncMsToTodos()" style="padding:5px 12px;border-radius:14px;background:#1B4FA0;color:#fff;border:none;cursor:pointer;font-size:11px;font-weight:700;white-space:nowrap;">📅 To-do 동기화</button>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+        <button onclick="addMs()" ${MILESTONES.length>=7?'disabled':''} style="flex:1;min-width:120px;padding:8px 14px;border-radius:8px;background:${MILESTONES.length>=7?'#F1F5F9':'#EFF6FF'};color:${MILESTONES.length>=7?'#CBD5E1':'#1B4FA0'};border:1px dashed ${MILESTONES.length>=7?'#CBD5E1':'#BFDBFE'};cursor:${MILESTONES.length>=7?'not-allowed':'pointer'};font-size:12px;font-weight:700;">＋ 단계 추가 (현재 ${MILESTONES.length}/7)</button>
+        <button onclick="resetMs()" style="padding:8px 14px;border-radius:8px;background:#FEF2F2;color:#ef4444;border:1px dashed #FECACA;cursor:pointer;font-size:12px;font-weight:600;">🔄 기본값으로</button>
+      </div>
+    </div>`;
+    // 편집 모드: 마일스톤 카드는 편집 UI로 대체하고, 나머지 홈 화면 콘텐츠는 그대로
+    window._msEditMarker = true;
+    var milestoneHtmlOverride = editHtml;
+  } else {
+    window._msEditMarker = false;
+  }
+
+  const milestoneHtml = window._msEditMarker ? milestoneHtmlOverride : `
+  <div class="card" style="background:#fff;border:1px solid #E2E8F0;padding:18px 20px;margin-bottom:14px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:8px;">
+      <div>
+        <div style="font-size:14px;font-weight:700;color:#0B1D3F;">🏁 포럼 핵심 마일스톤 흐름</div>
+        <div style="font-size:11px;color:#64748b;margin-top:2px;">전체 포럼 준비의 큰 틀과 현재 위치</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+        <span style="font-size:11px;background:#EFF6FF;color:#1B4FA0;padding:3px 10px;border-radius:7px;font-weight:600;">오늘: ${(()=>{const d=new Date();return d.getFullYear()+'.'+String(d.getMonth()+1).padStart(2,'0')+'.'+String(d.getDate()).padStart(2,'0');})()}</span>
+        <span style="font-size:13px;background:#FEF2F2;color:#dc2626;padding:4px 13px;border-radius:99px;font-weight:800;">D-${calcDDay()}</span>
+        <button onclick="toggleMsEdit()" title="마일스톤 편집" style="padding:4px 10px;border-radius:7px;background:#F1F5F9;color:#64748b;border:1px solid #E2E8F0;cursor:pointer;font-size:11px;font-weight:600;">✏️ 편집</button>
+      </div>
+    </div>
+    <div style="position:relative;display:flex;justify-content:space-between;align-items:flex-start;padding:0 8px;">
+      <div style="position:absolute;left:24px;right:24px;top:28px;height:3px;background:#E2E8F0;border-radius:99px;z-index:0;"></div>
+      <div style="position:absolute;left:24px;top:28px;height:3px;background:linear-gradient(90deg,#1B4FA0,#3B82F6);border-radius:99px;z-index:0;width:calc(${progressPercent}% - ${progressPercent > 0 ? '24px' : '0px'});transition:all .5s;"></div>
+      ${msWithStatus.map((m, idx) => {
+        const isCompleted = m.status === "completed";
+        const isCurrent = m.status === "current";
+        const dotStyle = isCompleted
+          ? "background:linear-gradient(135deg,#1B4FA0,#3B82F6);border:2px solid #1B4FA0;color:#fff;"
+          : isCurrent
+            ? "background:#fff;border:3px solid #1B4FA0;color:#1B4FA0;box-shadow:0 0 0 4px rgba(27,79,160,0.15);transform:scale(1.12);"
+            : "background:#fff;border:2px solid #CBD5E1;color:#94a3b8;";
+        const dateColor = isCurrent ? "#1B4FA0" : isCompleted ? "#475569" : "#94a3b8";
+        const titleColor = isCurrent ? "#1B4FA0" : isCompleted ? "#0B1D3F" : "#94a3b8";
+        const dotContent = isCompleted
+          ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>'
+          : `<span style="font-size:12px;font-weight:800;">${idx+1}</span>`;
+        const progress = calcMsProgress(m);
+        const hasCats = (m.cats||[]).length > 0;
+        return `<div onclick="openMilestone(${idx})" style="position:relative;display:flex;flex-direction:column;align-items:center;z-index:1;flex:1;min-width:0;cursor:${hasCats?'pointer':'default'};padding:4px;border-radius:8px;transition:background .2s;" onmouseover="this.style.background='#F8FAFC'" onmouseout="this.style.background='transparent'" title="${hasCats?'클릭: 연결된 체크리스트 보기':''}">
+          <span style="font-size:10px;font-weight:${isCurrent?'800':'600'};color:${dateColor};margin-bottom:6px;">${esc(m.dateLabel)}</span>
+          <div style="width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;${dotStyle};transition:all .3s;">
+            ${dotContent}
+          </div>
+          <span style="font-size:11px;margin-top:8px;font-weight:${isCurrent?'800':'600'};color:${titleColor};text-align:center;white-space:nowrap;line-height:1.3;">${esc(m.title)}</span>
+          ${progress !== null ? `
+            <div style="margin-top:5px;width:50px;height:3px;background:#E2E8F0;border-radius:99px;overflow:hidden;">
+              <div style="height:100%;width:${progress}%;background:${progress===100?'#16a34a':isCurrent?'#1B4FA0':'#94a3b8'};border-radius:99px;transition:width .4s;"></div>
+            </div>
+            <span style="font-size:9px;font-weight:700;color:${progress===100?'#16a34a':isCurrent?'#1B4FA0':'#94a3b8'};margin-top:2px;">${progress}%</span>
+          ` : ''}
+          ${isCurrent ? `<span style="margin-top:4px;background:linear-gradient(135deg,#1B4FA0,#3B82F6);color:#fff;font-size:9px;font-weight:800;padding:2px 7px;border-radius:5px;letter-spacing:.05em;animation:pulse 2s infinite;">진행중</span>` : ''}
+        </div>`;
+      }).join('')}
+    </div>
+  </div>`;
+
+  return milestoneHtml + `
   <div class="hero">
     <div>
       <div style="font-size:10px;opacity:.5;font-weight:700;letter-spacing:.07em;margin-bottom:4px;">2026 IVI GLOBAL VACCINE FORUM</div>
@@ -1630,13 +1931,40 @@ window.resetAgenda = function() {
 function pageChecklist() {
   const done=CL.filter(t=>t.done).length,total=CL.length,ov=pct(done,total);
   const catSorts = window._catSorts || (window._catSorts = {});
-  let html = `
+  const filterCats = window._clFilterCats || null;
+  const filterMs = window._clFilterMs || "";
+  let html = ``;
+  if (filterCats && filterCats.length > 0) {
+    const filteredItems = CL.filter(t => filterCats.includes(t.cat));
+    const fDone = filteredItems.filter(t => t.done).length;
+    const fPct = pct(fDone, filteredItems.length);
+    html += `<div class="card" style="background:linear-gradient(135deg,#FAFCFF,#EFF6FF);border:1px solid #BFDBFE;padding:14px 18px;margin-bottom:12px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+        <div>
+          <div style="font-size:11px;color:#1B4FA0;font-weight:700;letter-spacing:.05em;margin-bottom:2px;">🏁 마일스톤 필터</div>
+          <div style="font-size:15px;font-weight:800;color:#0B1D3F;">${esc(filterMs)}</div>
+          <div style="font-size:11px;color:#64748b;margin-top:3px;">연결된 카테고리: <strong>${filterCats.map(esc).join(", ")}</strong></div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:11px;color:#64748b;">진행률</span>
+            <span style="font-size:18px;font-weight:800;color:${fPct===100?'#16a34a':'#1B4FA0'};">${fPct}%</span>
+            <span style="font-size:11px;color:#64748b;">(${fDone}/${filteredItems.length})</span>
+          </div>
+          <button onclick="window._clFilterCats=null;window._clFilterMs='';draw()" style="padding:5px 12px;border-radius:14px;background:#fff;color:#1B4FA0;border:1px solid #BFDBFE;cursor:pointer;font-size:11px;font-weight:700;">✕ 필터 해제</button>
+        </div>
+      </div>
+    </div>`;
+  }
+  html += `
   <div class="card" style="display:flex;align-items:center;gap:16px;padding:13px 20px;margin-bottom:12px;">
     <div><div style="font-size:10px;color:#64748b;font-weight:700;margin-bottom:2px;">전체 진행률</div><div style="font-size:24px;font-weight:800;color:#1B4FA0;">${ov}%</div></div>
     <div style="flex:1;">${pctBar(ov,10)}</div>
     <div style="font-size:14px;font-weight:700;color:#64748b;">${done}/${total}개 완료</div>
   </div>`;
-  CATS.forEach(cat => {
+  // 필터가 있으면 해당 카테고리만, 없으면 모든 카테고리
+  const visibleCats = (filterCats && filterCats.length > 0) ? CATS.filter(c => filterCats.includes(c)) : CATS;
+  visibleCats.forEach(cat => {
     const its = CL.filter(t=>t.cat===cat);
     const d=its.filter(t=>t.done).length, p=pct(d,its.length), isOpen=catOpen[cat];
     html += `<div style="margin-bottom:10px;">
@@ -1665,7 +1993,7 @@ function pageChecklist() {
         });
       }
       html += `<div style="margin-top:6px;">
-        <div style="display:flex;align-items:center;gap:6px;padding:6px 4px;margin-bottom:4px;">
+        <div style="display:flex;align-items:center;gap:6px;padding:6px 4px;margin-bottom:4px;flex-wrap:wrap;">
           <span style="font-size:11px;color:#94a3b8;font-weight:600;">정렬:</span>
           ${[
             {k:"default", l:"기본"},
@@ -1673,7 +2001,25 @@ function pageChecklist() {
             {k:"desc",    l:"📅 ↓ 느린순"},
           ].map(({k,l})=>`<button onclick="setCatSort('${cat}','${k}')" style="padding:3px 10px;border-radius:10px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid ${sortKey===k?'#1B4FA0':'#E2E8F0'};background:${sortKey===k?'#1B4FA0':'#fff'};color:${sortKey===k?'#fff':'#64748b'};">${l}</button>`).join("")}
         </div>`;
-      sortedIts.forEach(it => {
+      // 미완료 / 완료 분리
+      const showDone = (window._showDoneCl = window._showDoneCl || {})[cat] === true;
+      const activeIts = sortedIts.filter(it => !it.done);
+      const doneIts = sortedIts.filter(it => it.done);
+      const visibleIts = showDone ? [...activeIts, ...doneIts] : activeIts;
+
+      // 미완료가 없고 완료 항목이 있을 때 안내
+      if (activeIts.length === 0 && doneIts.length > 0 && !showDone) {
+        html += `<div style="text-align:center;padding:18px 12px;color:#94a3b8;">
+          <div style="font-size:24px;margin-bottom:4px;">🎉</div>
+          <div style="font-size:12px;font-weight:600;">모든 항목 완료!</div>
+        </div>`;
+      }
+
+      visibleIts.forEach(it => {
+        // 완료된 항목과 미완료 항목 사이에 구분선
+        if (showDone && it === doneIts[0] && activeIts.length > 0) {
+          html += `<div style="font-size:10px;font-weight:700;color:#94a3b8;padding:8px 6px 4px;letter-spacing:.05em;border-top:1px dashed #E2E8F0;margin-top:4px;">✅ 완료된 항목</div>`;
+        }
         if (clEditId === it.id) {
           html += `<div style="padding:10px 12px;border-radius:8px;border:2px solid #BFDBFE;margin-bottom:4px;background:#FAFCFF;">
             <input type="text" id="cl-edit-input" value="${esc(it.task)}" style="margin-bottom:8px;" onkeydown="if(event.key==='Enter')saveClEdit(${it.id});if(event.key==='Escape')cancelClEdit();">
@@ -1724,6 +2070,14 @@ function pageChecklist() {
           </div>`;
         }
       });
+      // 완료된 항목 보기/숨기기 토글
+      if (doneIts.length > 0) {
+        html += `<div style="display:flex;justify-content:center;margin-top:8px;padding-top:8px;border-top:1px solid #F1F5F9;">
+          <button onclick="toggleShowDone('${cat.replace(/'/g,"\\'")}')" style="padding:4px 12px;border-radius:12px;background:#F8FAFC;color:#64748b;border:1px solid #E2E8F0;cursor:pointer;font-size:11px;font-weight:600;">
+            ${showDone ? `🙈 완료된 ${doneIts.length}개 숨기기` : `👁 완료된 ${doneIts.length}개 보기`}
+          </button>
+        </div>`;
+      }
       if (clAddCat === cat) {
         html += `<div class="add-row">
           <input type="text" id="cl-add-input" placeholder="새 항목 내용을 입력하세요..." onkeydown="if(event.key==='Enter')addCl('${cat}');if(event.key==='Escape')cancelClAdd();" style="border-color:#BBF7D0;">
@@ -2907,7 +3261,7 @@ function renderSpeakerTravelDetailCard(t) {
   if (!t) return "";
   // 입력된 상세 정보가 하나라도 있을 때만 표시
   const hasAir = t.airline || t.flightNo || t.flightArr || t.flightDep || t.seat || t.pnr;
-  const hasHotel = t.hotelName || t.hotelRes || t.checkIn || t.checkOut || t.roomType;
+  const hasHotel = t.hotelName || t.hotelRes || t.checkIn || t.checkOut;
   const hasPickup = t.pickupTime || t.pickupLoc || t.driver || t.vehicle || t.dropTime || t.dropLoc;
   const hasReq = t.diet || t.passport || t.emergency || t.visa || t.notes;
 
@@ -2944,10 +3298,9 @@ function renderSpeakerTravelDetailCard(t) {
       ["도착 일시", t.flightArr], ["출국 일시", t.flightDep],
       ["좌석", t.seat], ["예약번호 (PNR)", t.pnr],
     ])}
-    ${section("#0d9488", "🏨", "호텔", [
-      ["호텔명", t.hotelName], ["예약번호", t.hotelRes],
-      ["체크인", t.checkIn], ["체크아웃", t.checkOut],
-      ["객실 타입", t.roomType], ["조식", t.breakfast],
+    ${section("#0d9488", "🏨", "Hotel", [
+      ["Hotel", t.hotelName], ["Confirmation Number", t.hotelRes],
+      ["Check In", t.checkIn], ["Check Out", t.checkOut],
     ])}
     ${section("#7c3aed", "🚗", "픽업·교통", [
       ["픽업 시간", t.pickupTime], ["픽업 장소", t.pickupLoc],
@@ -2966,6 +3319,465 @@ function renderSpeakerTravelDetailCard(t) {
 }
 
 // ─── 자동 인식: 파일에서 출장 정보 추출 ───────────────
+// 섹션별 자동 채움 (flight/hotel/pickup)
+window.autoFillSection = async (travelId, section, event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+  const statusEl = document.getElementById(`td-autofill-status-${travelId}`);
+  const setStatus = (msg, color="#1B4FA0", bg="#EFF6FF") => {
+    if (!statusEl) return;
+    statusEl.style.display = "block";
+    statusEl.style.color = color;
+    statusEl.style.background = bg;
+    statusEl.innerHTML = msg;
+  };
+
+  const sectionLabels = {
+    flight: {icon:"✈️", name:"항공편", fields:["airline","flightNo","flightArr","flightDep","seat","pnr"]},
+    hotel:  {icon:"🏨", name:"Hotel",   fields:["hotelName","hotelRes","checkIn","checkOut"]},
+    pickup: {icon:"🚗", name:"픽업·교통", fields:["pickupTime","pickupLoc","driver","vehicle","dropTime","dropLoc"]},
+  };
+
+  setStatus(`${sectionLabels[section].icon} ${sectionLabels[section].name} 정보 추출 중...`);
+
+  try {
+    const text = await extractTextFromFile(file);
+    if (!text || text.trim().length < 20) {
+      setStatus("⚠️ 텍스트 추출 실패. 스캔본 PDF는 인식이 어렵습니다.", "#92400e", "#FEF3C7");
+      event.target.value = "";
+      return;
+    }
+
+    // 섹션별 추출 함수 호출
+    let extracted = {};
+    if (section === "flight") extracted = parseFlightInfo(text);
+    else if (section === "hotel") extracted = parseHotelInfo(text);
+    else if (section === "pickup") extracted = parsePickupInfo(text);
+
+    // 항공편 구간 정보가 있으면 TRAVEL_DETAIL에 직접 저장 + UI 갱신
+    if (section === "flight" && extracted.segments && extracted.segments.length > 0) {
+      TRAVEL_DETAIL = TRAVEL_DETAIL.map(t => t.id === travelId ? {...t, segments: extracted.segments} : t);
+      scheduleSave();
+      // 패널 다시 그리기 (segments UI 표시)
+      setTimeout(() => draw(), 100);
+    }
+
+    // 해당 섹션 필드만 채우기
+    const allowedFields = sectionLabels[section].fields;
+    const filtered = {};
+    Object.entries(extracted).forEach(([k,v]) => {
+      if (k === "segments") return; // segments는 별도 처리
+      if (allowedFields.includes(k)) filtered[k] = v;
+    });
+
+    if (Object.keys(filtered).length === 0 && !extracted.segments) {
+      setStatus(`⚠️ ${sectionLabels[section].name} 정보를 찾지 못했습니다. 파일이 맞는지 확인하세요.`, "#92400e", "#FEF3C7");
+      event.target.value = "";
+      return;
+    }
+
+    // UI 채우기 (이미 입력된 필드는 덮어쓰지 않음)
+    const labelMap = {airline:"항공사",flightNo:"편명",flightArr:"도착",flightDep:"출국",seat:"좌석",pnr:"PNR",
+                     hotelName:"Hotel",hotelRes:"Confirmation Number",checkIn:"Check In",checkOut:"Check Out",
+                     pickupTime:"픽업시간",pickupLoc:"픽업장소",driver:"운전기사",vehicle:"차량",dropTime:"샌딩시간",dropLoc:"샌딩지"};
+    let filled = [], skipped = [];
+    Object.entries(filtered).forEach(([key, value]) => {
+      const el = document.getElementById("td-" + key);
+      if (!el) return;
+      if (el.value.trim()) {
+        skipped.push(labelMap[key]||key);
+      } else {
+        el.value = value;
+        el.style.background = "#F0FDF4";
+        el.style.borderColor = "#86efac";
+        filled.push(labelMap[key]||key);
+      }
+    });
+
+    let msg = `${sectionLabels[section].icon} <strong>${sectionLabels[section].name}</strong> 분석 완료`;
+    if (extracted.segments && extracted.segments.length > 0) {
+      msg += `<br>✈️ <strong>${extracted.segments.length}개 구간 인식됨</strong>: ${extracted.segments.map(s => `${s.from||'?'}→${s.to||'?'} ${s.flightNo}`).join(' · ')}`;
+      // segments 저장 후 화면 다시 그려서 구간 표시
+      setTimeout(() => draw(), 100);
+    }
+    if (filled.length > 0) msg += `<br>✅ 자동 입력: ${filled.join(", ")}`;
+    if (skipped.length > 0) msg += `<br>ℹ️ 이미 입력됨 (건너뜀): ${skipped.join(", ")}`;
+    msg += `<br><strong>💾 저장 버튼을 눌러 확정하세요</strong>`;
+    setStatus(msg, filled.length > 0 || extracted.segments ? "#15803d" : "#92400e", filled.length > 0 || extracted.segments ? "#F0FDF4" : "#FEF3C7");
+  } catch (err) {
+    setStatus(`⚠️ 분석 실패: ${err.message}`, "#991b1b", "#FEE2E2");
+  }
+  event.target.value = "";
+};
+
+// 파일에서 텍스트 추출 (PDF/TXT/EML 공통)
+async function extractTextFromFile(file) {
+  if (file.type === "application/pdf" || /\.pdf$/i.test(file.name)) {
+    if (typeof pdfjsLib === "undefined") throw new Error("PDF 라이브러리 로드 실패. 새로고침 후 다시 시도하세요.");
+    const buf = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({data: buf}).promise;
+    const pages = [];
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      pages.push(content.items.map(it => it.str).join(" "));
+    }
+    return pages.join("\n");
+  }
+  if (/\.(txt|eml)$/i.test(file.name) || file.type.startsWith("text/")) {
+    return await file.text();
+  }
+  if (file.type.startsWith("image/")) {
+    throw new Error("이미지는 OCR 미지원. PDF나 텍스트 파일을 사용하세요.");
+  }
+  throw new Error("지원하지 않는 파일 형식. PDF/TXT/EML을 사용하세요.");
+}
+
+// ─── 섹션별 파서 ─────────────────────────────────────
+
+function parseFlightInfo(text) {
+  const orig = text;
+  const t = text.replace(/\s+/g, " ");
+  const out = {segments: []};
+
+  // ── 1) 모든 일시 후보 추출 (위치 정보 포함) ─────────
+  const allDateTimes = [];
+  const reA = /\b(\d{1,2})([A-Z]{3})(\d{2,4})(?:\s*\([A-Z]{3}\))?\s*(\d{1,2}[:.]\d{2})\b/gi;
+  const monMap = {JAN:"01",FEB:"02",MAR:"03",APR:"04",MAY:"05",JUN:"06",JUL:"07",AUG:"08",SEP:"09",OCT:"10",NOV:"11",DEC:"12"};
+  let am;
+  while ((am = reA.exec(orig)) !== null) {
+    const day = am[1].padStart(2,"0");
+    const mon = monMap[am[2].toUpperCase()] || "01";
+    let yr = am[3];
+    if (yr.length === 2) yr = "20" + yr;
+    const time = am[4].replace(".", ":");
+    allDateTimes.push({pos: am.index, display: `${yr}-${mon}-${day} ${time}`});
+  }
+  if (allDateTimes.length === 0) {
+    const reB = /(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{4})\s*(?:at\s+)?(\d{1,2}[:.]\d{2})/gi;
+    let bm;
+    while ((bm = reB.exec(orig)) !== null) {
+      allDateTimes.push({pos: bm.index, display: `${bm[1]} ${bm[2]} ${bm[3]} ${bm[4].replace(".",":")}`});
+    }
+  }
+  if (allDateTimes.length === 0) {
+    const reC = /(\d{4}[-\/]\d{1,2}[-\/]\d{1,2}|\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})\s*(?:at\s+)?(\d{1,2}[:.]\d{2})/gi;
+    let cm;
+    while ((cm = reC.exec(orig)) !== null) {
+      allDateTimes.push({pos: cm.index, display: `${cm[1]} ${cm[2].replace(".",":")}`});
+    }
+  }
+
+  // ── 2) 편명 후보 추출 (PNR 제외) ────────────────────
+  const flightCodes = [];
+  const reF = /\b([A-Z]{2})\s?(\d{2,4})\b/g;
+  let fm;
+  while ((fm = reF.exec(t)) !== null) {
+    const before = t.substring(Math.max(0, fm.index - 30), fm.index).toLowerCase();
+    if (/booking\s*ref|reference|reservation|record\s*locator|^pnr|\spnr|ticket\s*(number|no)/.test(before)) continue;
+    flightCodes.push({pos: fm.index, code: fm[1], num: fm[2], full: fm[1]+fm[2]});
+  }
+
+  // ── 3) IATA 공항코드 추출 (SFO, ICN, etc.) ─────────
+  const airportPattern = /\b(SFO|ICN|GMP|LAX|JFK|NRT|HND|PEK|PVG|HKG|SIN|BKK|TPE|FRA|LHR|CDG|AMS|MAD|FCO|SYD|YYZ|YVR|ATL|ORD|DFW|MIA|BOS|SEA|IAD|EWR|MEX|GRU|SCL|DOH|DXB|AUH|ADD|JNB|CAI|IST|DEL|BOM|MNL|KUL|CGK|SGN|HAN|TLV|MUC|ZRH|VIE|BRU|CPH|ARN|OSL|HEL|WAW|PRG|ATH|LIS|DUB|BCN|GVA|YUL|YHZ|DEN|PHX|LAS|MSP|DTW|PHL|CLT|MCO|FLL|TPA|RDU|BNA|HNL|ANC|GUM)\b/g;
+  const airports = [];
+  let ap;
+  while ((ap = airportPattern.exec(t)) !== null) {
+    airports.push({pos: ap.index, code: ap[1]});
+  }
+
+  // ── 4) 좌석 번호 후보 ───────────────────────────────
+  const seatPattern = /(?:Seat\s*Number|Seat\s*No\.?|좌석\s*번호|Seat[\s:#]+)\s*([0-9]{1,3}[A-Z])\b/gi;
+  const seats = [];
+  let sm;
+  while ((sm = seatPattern.exec(t)) !== null) {
+    seats.push({pos: sm.index, val: sm[1].toUpperCase()});
+  }
+
+  // ── 5) 구간 조립 ────────────────────────────────────
+  // 편명 위치를 기준으로 그 근처(전후 500자)의 정보를 묶음
+  const carriers = {
+    OZ:"Asiana Airlines", KE:"Korean Air", AA:"American Airlines",
+    DL:"Delta", UA:"United", JL:"Japan Airlines", NH:"ANA",
+    TG:"Thai Airways", SQ:"Singapore Airlines", CX:"Cathay Pacific",
+    AF:"Air France", LH:"Lufthansa", BA:"British Airways",
+    QF:"Qantas", EK:"Emirates", QR:"Qatar Airways", ET:"Ethiopian Airlines",
+    VN:"Vietnam Airlines", PR:"Philippine Airlines", MH:"Malaysia Airlines"
+  };
+
+  const segments = [];
+  flightCodes.forEach(fc => {
+    const startPos = fc.pos;
+    const endPos = fc.pos + 500; // 다음 500자 안에서 정보 찾기
+
+    // 이 편명 뒤에 가까운 날짜 2개 = 출발/도착
+    const segDates = allDateTimes
+      .filter(d => d.pos >= startPos - 100 && d.pos <= endPos)
+      .sort((a,b) => a.pos - b.pos);
+    // 이 편명 뒤에 가까운 공항 2개 = 출발지/도착지
+    const segAirports = airports
+      .filter(a => a.pos >= startPos - 200 && a.pos <= endPos)
+      .sort((a,b) => a.pos - b.pos);
+    // 이 편명 뒤에 가까운 좌석
+    const segSeats = seats
+      .filter(s => s.pos >= startPos && s.pos <= endPos)
+      .sort((a,b) => a.pos - b.pos);
+
+    // 중복 방지: 이미 사용된 위치 검사
+    const usedDates = segments.flatMap(s => [s._depPos, s._arrPos].filter(Boolean));
+    const usedSeats = segments.flatMap(s => s._seatPos != null ? [s._seatPos] : []);
+
+    const availDates = segDates.filter(d => !usedDates.includes(d.pos));
+    const availSeats = segSeats.filter(s => !usedSeats.includes(s.pos));
+
+    if (availDates.length < 1) return; // 날짜 없으면 구간 건너뜀
+
+    segments.push({
+      flightNo: fc.full,
+      from: segAirports[0]?.code || "",
+      to: segAirports[1]?.code || "",
+      depTime: availDates[0]?.display || "",
+      arrTime: availDates[1]?.display || "",
+      seat: availSeats[0]?.val || "",
+      _depPos: availDates[0]?.pos,
+      _arrPos: availDates[1]?.pos,
+      _seatPos: availSeats[0]?.pos,
+    });
+  });
+
+  // 위치 메타 제거
+  out.segments = segments.map(s => {
+    const {_depPos, _arrPos, _seatPos, ...rest} = s;
+    return rest;
+  });
+
+  // ── 6) 호환성: 첫 번째 도착시간 / 두 번째 출발시간을 기존 필드에도 ─────
+  if (segments.length >= 1) out.flightArr = segments[0].arrTime || segments[0].depTime;
+  if (segments.length >= 2) out.flightDep = segments[1].depTime;
+
+  // ── 7) 항공사 (편명에서 추론) ──────────────────────
+  if (segments.length > 0) {
+    const firstCode = segments[0].flightNo.substring(0, 2);
+    if (carriers[firstCode]) out.airline = carriers[firstCode];
+  }
+
+  // 호환성: 단일 편명/좌석 (기존 UI 호환)
+  if (segments.length > 0 && !out.flightNo) out.flightNo = segments[0].flightNo;
+  if (segments.length > 0 && !out.seat) out.seat = segments[0].seat;
+
+  // ── 8) PNR ─────────────────────────────────────────
+  const pnrM = t.match(/(?:Booking\s+Reference|Booking\s+Ref\.?|Booking\s+Code|Reservation\s+(?:Code|Number)|Record\s+Locator|PNR|Confirmation\s+(?:Number|Code|#)|예약\s*(?:번호|코드))[\s:#]*([A-Z0-9]{5,8})\b/i);
+  if (pnrM) out.pnr = pnrM[1].toUpperCase();
+
+  // ── 9) 클래스 ──────────────────────────────────────
+  const classM = t.match(/\b(R\s*\(\s*Prestige\s*\)|Prestige|Business|Economy|First|Premium\s+Economy|비즈니스|이코노미|퍼스트|프레스티지)\s*(?:Class|class|클래스)?\b/i);
+  if (classM) {
+    let cls = classM[1].replace(/R\s*\(\s*Prestige\s*\)/i, "Prestige").trim();
+    if (/비즈니스/.test(cls)) cls = "Business";
+    if (/이코노미/.test(cls)) cls = "Economy";
+    if (/퍼스트/.test(cls)) cls = "First";
+    if (/프레스티지/.test(cls)) cls = "Prestige";
+    if (out.seat && !out.seat.includes(cls)) out.seat = cls + " / " + out.seat;
+    else if (!out.seat) out.seat = cls;
+  }
+
+  return out;
+}
+
+function parseHotelInfo(text) {
+  const orig = text;
+  const t = text.replace(/\s+/g, " ");
+  const out = {};
+
+  // ── 1) 예약번호 ────────────────────────────────────
+  const resPatterns = [
+    /(?:Confirmation\s+(?:Number|Code|#|No\.?|Numbers?))[\s\S]{0,50}?([A-Z0-9][A-Z0-9\-\/]{5,24})\b/i,
+    /(?:Booking\s+(?:Number|ID|Code|Ref(?:erence)?|No\.?))[\s\S]{0,50}?([A-Z0-9][A-Z0-9\-\/]{5,24})\b/i,
+    /(?:Reservation\s+(?:ID|Number|Code|No\.?|Confirmation))[\s\S]{0,50}?([A-Z0-9][A-Z0-9\-\/]{5,24})\b/i,
+    /(?:예약\s*(?:확인\s*)?(?:번호|코드))[\s\S]{0,50}?([A-Z0-9][A-Z0-9\-\/]{5,24})\b/i,
+    /(?:Conf(?:irmation)?\.?\s*[#No\.]+)[\s\S]{0,50}?([A-Z0-9][A-Z0-9\-\/]{5,24})\b/i,
+  ];
+  for (const re of resPatterns) {
+    const m = orig.match(re) || t.match(re);
+    if (m && m[1]) {
+      const v = m[1].trim();
+      if (!/^(HOTEL|GUEST|ROOM|EMAIL|PHONE|DATE|TIME|CHECK|NIGHT|TOTAL|TAX|RATE|CARD|VISA|MASTER|AMEX|CONFIRM|BOOKING|RESERV|NUMBER)$/i.test(v)) {
+        out.hotelRes = v;
+        break;
+      }
+    }
+  }
+
+  // ── 2) 호텔 이름 ───────────────────────────────────
+  // 2a. 라벨
+  let hotelNameM = orig.match(/(?:Hotel\s+Name|Property\s+Name|숙소(?:명)?|호텔(?:명)?)\s*[:：]\s*([^\n\r]{5,80}?)(?=\s*(?:Address\s*[:：]|(?:^|\s)Phone\s*[:：]|(?:^|\s)Tel\.?\s*[:：]|Email\s*[:：]|주소\s*[:：]|전화\s*[:：]|Check[\s\-]?in|Check[\s\-]?out|체크인|체크아웃|Confirmation\s+(?:Number|Code)|Booking\s+(?:Number|ID|Code)|Reservation\s+(?:ID|Number|Code)|예약\s*(?:확인\s*)?(?:번호|코드)|$|\n))/i);
+  if (hotelNameM) out.hotelName = hotelNameM[1].trim().replace(/[,\.\s]+$/, "");
+
+  // 2b. "Thank you for choosing XXX" 패턴 (공식 호텔 바우처에서 가장 정확함)
+  if (!out.hotelName) {
+    const thankM = orig.match(/(?:Thank\s+you\s+for\s+(?:choosing|selecting|staying\s+(?:at|with))|We\s+are\s+pleased\s+to\s+(?:welcome\s+you\s+to|confirm\s+your\s+reservation\s+at))\s+([^.\n]{5,100}?)(?=\s*(?:\.|We\s+are|We\s+would|Please|$|\n))/i);
+    if (thankM) out.hotelName = thankM[1].trim().replace(/[,\s]+$/, "");
+  }
+
+  // 2c. 체인 호텔 (THE 접두사 포함)
+  if (!out.hotelName) {
+    const chainStart = /\b((?:THE\s+)?(?:Sotetsu|Marriott|Hilton|Hyatt|Sheraton|Westin|Conrad|Lotte|Shilla|Plaza|Four\s+Seasons|Grand\s+Hyatt|Park\s+Hyatt|Novotel|Ibis|Ramada|InterContinental|Holiday\s+Inn|Courtyard|Fairmont|Hyundai|Best\s+Western|Crowne\s+Plaza|Doubletree|Renaissance|Aloft|Le\s+Meridien|M[öo]venpick|Mercure|Sofitel|Pullman|Banyan\s+Tree|Mandarin\s+Oriental|Ritz[\s\-]Carlton|St\.?\s+Regis|W\s+Hotel|JW\s+Marriott|Anantara|Kempinski|Oakwood|Fraser|Pan\s+Pacific|Shangri[\s\-]La|Hard\s+Rock|Wyndham))\b/i;
+    const cM = orig.match(chainStart);
+    if (cM) {
+      const startIdx = cM.index;
+      const tail = orig.substring(startIdx, startIdx + 100);
+      const stopPattern = /(?:Confirmation\s+(?:Number|Code|#|No\.?)|Booking\s+(?:Number|ID|Code|Ref)|Reservation\s+(?:ID|Number|Code)|Address\s*[:：]|(?:^|\s)Phone\s*[:：]?|(?:^|\s)Tel\.?\s*[:：]|(?:^|\s)Fax\s*[:：]?|Email\s*[:：]|Invoice\s+(?:Date|Number)|Check[\s\-]?in|Check[\s\-]?out|Arrival\s+Date|Departure\s+Date|Room\s+Type|Room\s+Category|Guest\s+Name|예약\s*(?:확인\s*)?(?:번호|코드)|체크인|체크아웃|주소|전화|숙소명|호텔명|Dear\s|Thank\s+you|\d{4}[-\/.]\d|We\s+are)/i;
+      const stopM = tail.match(stopPattern);
+      let extracted = stopM ? tail.substring(0, stopM.index) : tail;
+      extracted = extracted.split(/[\n\r]/)[0].trim();
+      if (extracted.length > 60) {
+        const words = extracted.split(/\s+/);
+        extracted = words.slice(0, 8).join(" ");
+      }
+      out.hotelName = extracted.replace(/[,\.\s]+$/, "");
+    }
+  }
+
+  // 2d. "XXX Hotel" 후행
+  if (!out.hotelName) {
+    const tailM = orig.match(/\b([A-Z][A-Za-z0-9&'\-]+(?:\s+[A-Z][A-Za-z0-9&'\-]+){0,4}\s+(?:Hotel|Resort|Suites|Inn|Tower|Residence|Hostel))\b(?!\s*(?:Name|Address|Phone))/);
+    if (tailM) out.hotelName = tailM[1].trim();
+  }
+
+  // ── 3) 체크인/체크아웃 ─────────────────────────────
+  const dateRegexStr = "(\\d{1,2}[A-Z]{3}\\d{2,4}(?:\\s*\\([A-Z]{3}\\))?|\\d{1,2}\\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*(?:,?\\s+\\d{4})?|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\s+\\d{1,2}(?:,?\\s+\\d{2,4})?|\\d{4}[-\\/.]\\d{1,2}[-\\/.]\\d{1,2}|\\d{1,2}[-\\/.]\\d{1,2}[-\\/.]\\d{2,4})";
+
+  const ciM = orig.match(new RegExp(
+    `(?:Check[-\\s]*[Ii]n(?:\\s+Date)?|Arrival(?:\\s+Date)?|Arriving|입실|체크인|숙박\\s*시작)[\\s:\\-]*${dateRegexStr}`, "i"
+  ));
+  if (ciM) out.checkIn = ciM[1].trim();
+
+  const coM = orig.match(new RegExp(
+    `(?:Check[-\\s]*[Oo]ut(?:\\s+Date)?|Departure(?:\\s+Date)?|Departing|퇴실|체크아웃|숙박\\s*종료)[\\s:\\-]*${dateRegexStr}`, "i"
+  ));
+  if (coM) out.checkOut = coM[1].trim();
+
+  // 미발견 시 연속 2개 날짜 (취소정책 날짜 등 배제)
+  if (!out.checkIn || !out.checkOut) {
+    const allDates = [];
+    const reDates = new RegExp(dateRegexStr, "gi");
+    let dm;
+    while ((dm = reDates.exec(orig)) !== null) {
+      const before = orig.substring(Math.max(0,dm.index-30), dm.index).toLowerCase();
+      if (/issued|sent|today|email|invoice\s*date|order\s*date|booked\s*on|cancel|policy|prior\s+to|by\s+\d/i.test(before)) continue;
+      const after = orig.substring(dm.index + dm[1].length, dm.index + dm[1].length + 10).toLowerCase();
+      if (/^\s*(pm|am|p\.m\.|a\.m\.)/i.test(after)) continue;
+      allDates.push(dm[1]);
+    }
+    if (allDates.length >= 2) {
+      if (!out.checkIn) out.checkIn = allDates[0];
+      if (!out.checkOut) out.checkOut = allDates[1];
+    } else if (allDates.length === 1 && !out.checkIn) {
+      out.checkIn = allDates[0];
+    }
+  }
+
+  // ── 4) 객실 타입 ───────────────────────────────────
+  let roomM = orig.match(/(?:Room\s+Type|Room\s+Category|객실\s*(?:타입|종류))\s*[:：]?\s*([^\n\r]{3,60}?)(?=\s*(?:Preference|Number\s+of|Nightly|$|\n))/i);
+  if (!roomM) {
+    roomM = orig.match(/\b((?:Deluxe|Standard|Superior|Executive|Suite|Premium|Twin|King|Queen|Double|Single|Family|Junior|Penthouse)\s*(?:Room|Bed|Twin|Double|Single|Suite|King|Queen)?(?:\s+(?:with|w\/|ocean|city|garden|sea|mountain|river)\s+\w+){0,2})/i);
+  }
+  if (roomM) out.roomType = roomM[1].trim().substring(0, 60);
+
+  // ── 5) 조식 ────────────────────────────────────────
+  if (/Breakfast(?:\s+included|\s*,|\s+Free|\s+Inclusive)/i.test(orig) || /조식\s*(?:포함|Inclusive)/i.test(orig)) {
+    out.breakfast = "Y";
+  } else if (/Breakfast.*(?:not\s+included|excluded|N\/A|미포함|불포함)/i.test(orig)) {
+    out.breakfast = "N";
+  }
+
+  // ── 6) Nights → 체크아웃 추론 ──────────────────────
+  // 체크아웃이 이미 있으면 건너뜀, "1 day prior" 같은 정책 문구도 배제
+  if (out.checkIn && !out.checkOut) {
+    const nightsM = orig.match(/(?<!prior\s+to\s+)(?<!by\s+)(\d{1,2})\s*(?:Nights?\b|박)/i);
+    if (nightsM) {
+      const nights = parseInt(nightsM[1]);
+      const ci = normDate(out.checkIn);
+      if (ci) {
+        const co = new Date(ci.getTime() + nights * 86400000);
+        out.checkOut = `${co.getFullYear()}-${String(co.getMonth()+1).padStart(2,"0")}-${String(co.getDate()).padStart(2,"0")}`;
+      }
+    }
+  }
+
+  return out;
+}
+
+// 다양한 포맷의 날짜 문자열을 Date 객체로 변환
+function normDate(s) {
+  if (!s) return null;
+  s = s.trim();
+  // 24JUN26 또는 24JUN2026
+  const monMap = {JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11};
+  let m = s.match(/^(\d{1,2})([A-Z]{3})(\d{2,4})/i);
+  if (m) {
+    let y = parseInt(m[3]); if (y < 100) y += 2000;
+    return new Date(y, monMap[m[2].toUpperCase()]||0, parseInt(m[1]));
+  }
+  // 2026-06-24 또는 2026/06/24
+  m = s.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/);
+  if (m) return new Date(parseInt(m[1]), parseInt(m[2])-1, parseInt(m[3]));
+  // 24/06/2026 또는 24.06.2026 (DD/MM/YYYY 가정)
+  m = s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2,4})/);
+  if (m) {
+    let y = parseInt(m[3]); if (y < 100) y += 2000;
+    return new Date(y, parseInt(m[2])-1, parseInt(m[1]));
+  }
+  // 24 Jun 2026
+  m = s.match(/^(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*(?:,?\s+(\d{4}))?/i);
+  if (m) {
+    const y = m[3] ? parseInt(m[3]) : 2026;
+    return new Date(y, monMap[m[2].substring(0,3).toUpperCase()], parseInt(m[1]));
+  }
+  // Jun 24, 2026
+  m = s.match(/^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{1,2})(?:,?\s+(\d{4}))?/i);
+  if (m) {
+    const y = m[3] ? parseInt(m[3]) : 2026;
+    return new Date(y, monMap[m[1].substring(0,3).toUpperCase()], parseInt(m[2]));
+  }
+  return null;
+}
+
+function parsePickupInfo(text) {
+  const t = text.replace(/\s+/g, " ").replace(/[^\S ]+/g, " ");
+  const out = {};
+
+  // 픽업 시간 (Pickup time / Pick-up at / 픽업)
+  const puTimeM = t.match(/(?:Pick(?:-|\s)?up|픽업)[\s:]*(?:Time|일시|시간)?[\s:]*(\d{1,2}[\/\-]\d{1,2}[^,]{0,15}?\d{1,2}[:.]\d{2}|\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[^.]{0,20}?\d{1,2}[:.]\d{2})/i);
+  if (puTimeM) out.pickupTime = puTimeM[1].replace(/\./g, ":");
+
+  // 픽업 장소 (Pickup location / 만남 장소)
+  const puLocM = t.match(/(?:Pick(?:-|\s)?up\s+(?:Location|Point|Place|Spot)|만남\s*장소|픽업\s*장소|Meeting\s+Point)[\s:]*([A-Za-z0-9가-힣 ,\.\-#]{3,60})/i)
+              || t.match(/\b(ICN\s+(?:T1|T2|Terminal\s+\d|Exit\s+\d+|Gate\s+\d+)[A-Za-z0-9 ,]*?)/i)
+              || t.match(/\b(GMP\s+(?:Terminal|Exit)[A-Za-z0-9 ,]*?)/i);
+  if (puLocM) out.pickupLoc = puLocM[1].trim();
+
+  // 운전기사 (Driver / 기사)
+  const driverM = t.match(/(?:Driver|운전기사|기사(?:님)?)[\s:]*(?:Name)?[\s:]*([가-힣A-Za-z]+(?:\s*[\(\/].*?[\)\]])?\s*(?:010|011|016|017|018|019|\+\d{1,3})?[-\s\d]{8,15})/i)
+              || t.match(/(?:Driver|운전기사|기사)[\s:]*([가-힣A-Za-z]{2,10})\s+(\d{2,3}[-\s]?\d{3,4}[-\s]?\d{4})/i);
+  if (driverM) out.driver = driverM[0].replace(/^(?:Driver|운전기사|기사(?:님)?)[\s:]*/i, "").trim();
+
+  // 차량 (Vehicle / 차량번호)
+  const vehicleM = t.match(/(?:Vehicle|차량(?:\s*번호)?|Car)[\s:]*([A-Za-z0-9가-힣\s,]{3,40})/i)
+                || t.match(/(\d{2,3}[가-힣]\s?\d{4})/);
+  if (vehicleM) out.vehicle = vehicleM[1].trim().substring(0, 50);
+
+  // 샌딩 시간 (Drop-off / 출국 픽업)
+  const dropTimeM = t.match(/(?:Drop(?:-|\s)?off|샌딩|복귀\s*픽업)[\s:]*(?:Time|일시|시간)?[\s:]*(\d{1,2}[\/\-]\d{1,2}[^,]{0,15}?\d{1,2}[:.]\d{2}|\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[^.]{0,20}?\d{1,2}[:.]\d{2})/i);
+  if (dropTimeM) out.dropTime = dropTimeM[1].replace(/\./g, ":");
+
+  // 샌딩 도착지 (Drop-off location)
+  const dropLocM = t.match(/(?:Drop(?:-|\s)?off\s+(?:Location|Point|Place)|샌딩\s*도착지|복귀\s*장소)[\s:]*([A-Za-z0-9가-힣 ,\.\-#]{3,60})/i);
+  if (dropLocM) out.dropLoc = dropLocM[1].trim();
+
+  return out;
+}
+
 window.autoFillTravelDetail = async (travelId, event) => {
   const file = event.target.files[0];
   if (!file) return;
@@ -3033,7 +3845,7 @@ window.autoFillTravelDetail = async (travelId, event) => {
     });
 
     // 모든 필드가 이미 차있는 경우라도 추출 결과 보여주기
-    const labelMap = {airline:"항공사",flightNo:"편명",flightArr:"도착",flightDep:"출국",seat:"좌석",pnr:"PNR",hotelName:"호텔",hotelRes:"호텔예약",checkIn:"체크인",checkOut:"체크아웃",roomType:"객실"};
+    const labelMap = {airline:"항공사",flightNo:"편명",flightArr:"도착",flightDep:"출국",seat:"좌석",pnr:"PNR",hotelName:"Hotel",hotelRes:"Confirmation Number",checkIn:"Check In",checkOut:"Check Out"};
     const filledLabels = filled.map(k => labelMap[k]||k).join(", ");
     if (filled.length > 0) {
       setStatus(`✅ ${filled.length}개 필드 자동 입력: ${filledLabels} (저장 버튼 눌러 확정)`, "#15803d", "#F0FDF4");
@@ -3150,11 +3962,7 @@ function renderTravelDetailPanel(t) {
     <div style="margin:6px 8px 12px;padding:14px 18px;background:linear-gradient(180deg,#F0F9FF,#fff);border-radius:10px;border:1px solid #BFDBFE;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
         <span style="font-size:13px;font-weight:800;color:#1B4FA0;">🛬 ${esc(t.name)} — 출장 상세</span>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;">
-          <label style="padding:5px 12px;border-radius:8px;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;cursor:pointer;font-size:12px;font-weight:700;display:inline-flex;align-items:center;gap:4px;" title="항공권·호텔 예약 PDF/이미지 첨부하면 자동 채워줍니다">
-            ✨ 자동 인식
-            <input type="file" accept=".pdf,.txt,.eml,image/*" style="display:none;" onchange="autoFillTravelDetail('${t.id}', event)">
-          </label>
+        <div style="display:flex;gap:6px;">
           <button onclick="saveTravelDetail('${t.id}')" style="padding:5px 14px;border-radius:8px;background:#0d9488;color:#fff;border:none;cursor:pointer;font-size:12px;font-weight:700;">💾 저장</button>
           <button onclick="window._travelDetailId=null;draw()" style="padding:5px 12px;border-radius:8px;background:#F1F5F9;color:#64748b;border:none;cursor:pointer;font-size:12px;">닫기</button>
         </div>
@@ -3163,33 +3971,93 @@ function renderTravelDetailPanel(t) {
 
       <!-- 항공편 -->
       <div style="background:#fff;border-radius:8px;padding:11px 13px;margin-bottom:10px;border:1px solid #E2E8F0;">
-        <div style="font-size:11px;font-weight:800;color:#1B4FA0;letter-spacing:.04em;margin-bottom:8px;">✈️ 항공편</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+          <div style="font-size:11px;font-weight:800;color:#1B4FA0;letter-spacing:.04em;">✈️ 항공편${(t.segments||[]).length > 0 ? ` <span style="background:#1B4FA0;color:#fff;font-size:9px;padding:1px 6px;border-radius:5px;font-weight:700;margin-left:4px;">${t.segments.length}구간</span>` : ""}</div>
+          <div style="display:flex;gap:4px;">
+            ${(t.segments||[]).length > 0 ? `<button onclick="addFlightSegment('${t.id}')" style="padding:3px 9px;border-radius:14px;background:#EFF6FF;color:#1B4FA0;border:1px solid #BFDBFE;cursor:pointer;font-size:10px;font-weight:700;">＋ 구간</button>` : ""}
+            <label style="padding:3px 10px;border-radius:14px;background:linear-gradient(135deg,#1B4FA0,#3B82F6);color:#fff;border:none;cursor:pointer;font-size:10px;font-weight:700;display:inline-flex;align-items:center;gap:3px;" title="E-Ticket PDF 첨부 → 자동 채움">
+              ✨ E-Ticket 인식
+              <input type="file" accept=".pdf,.txt,.eml" style="display:none;" onchange="autoFillSection('${t.id}','flight',event)">
+            </label>
+          </div>
+        </div>
+
+        ${(t.segments||[]).length > 0 ? `
+        <!-- 구간별 표시 -->
+        <div style="margin-bottom:10px;">
+          ${t.segments.map((seg, segIdx) => `
+          <div style="background:linear-gradient(180deg,#F8FAFC,#fff);border-radius:7px;padding:8px 10px;margin-bottom:5px;border:1px solid #E2E8F0;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+              <span style="font-size:10px;font-weight:700;color:#1B4FA0;background:#EFF6FF;padding:2px 7px;border-radius:5px;">구간 ${segIdx+1}</span>
+              <button onclick="delFlightSegment('${t.id}',${segIdx})" style="background:none;border:none;cursor:pointer;font-size:11px;color:#fca5a5;padding:1px 4px;">✕</button>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+              <div>
+                <label style="font-size:9px;color:#94a3b8;font-weight:700;display:block;">편명·항공사</label>
+                <input value="${esc(seg.flightNo||'')}" onchange="setSegment('${t.id}',${segIdx},'flightNo',this.value)" placeholder="KE0024" style="width:100%;padding:4px 8px;border-radius:5px;border:1px solid #E2E8F0;font-size:11px;outline:none;">
+              </div>
+              <div>
+                <label style="font-size:9px;color:#94a3b8;font-weight:700;display:block;">좌석</label>
+                <input value="${esc(seg.seat||'')}" onchange="setSegment('${t.id}',${segIdx},'seat',this.value)" placeholder="12D" style="width:100%;padding:4px 8px;border-radius:5px;border:1px solid #E2E8F0;font-size:11px;outline:none;">
+              </div>
+              <div>
+                <label style="font-size:9px;color:#94a3b8;font-weight:700;display:block;">출발지 → 도착지</label>
+                <div style="display:flex;gap:4px;align-items:center;">
+                  <input value="${esc(seg.from||'')}" onchange="setSegment('${t.id}',${segIdx},'from',this.value)" placeholder="SFO" maxlength="4" style="flex:1;padding:4px 6px;border-radius:5px;border:1px solid #E2E8F0;font-size:11px;outline:none;text-align:center;text-transform:uppercase;">
+                  <span style="color:#94a3b8;font-size:10px;">→</span>
+                  <input value="${esc(seg.to||'')}" onchange="setSegment('${t.id}',${segIdx},'to',this.value)" placeholder="ICN" maxlength="4" style="flex:1;padding:4px 6px;border-radius:5px;border:1px solid #E2E8F0;font-size:11px;outline:none;text-align:center;text-transform:uppercase;">
+                </div>
+              </div>
+              <div></div>
+              <div>
+                <label style="font-size:9px;color:#94a3b8;font-weight:700;display:block;">출발 일시</label>
+                <input value="${esc(seg.depTime||'')}" onchange="setSegment('${t.id}',${segIdx},'depTime',this.value)" placeholder="2026-06-23 12:40" style="width:100%;padding:4px 8px;border-radius:5px;border:1px solid #E2E8F0;font-size:11px;outline:none;">
+              </div>
+              <div>
+                <label style="font-size:9px;color:#94a3b8;font-weight:700;display:block;">도착 일시</label>
+                <input value="${esc(seg.arrTime||'')}" onchange="setSegment('${t.id}',${segIdx},'arrTime',this.value)" placeholder="2026-06-24 17:20" style="width:100%;padding:4px 8px;border-radius:5px;border:1px solid #E2E8F0;font-size:11px;outline:none;">
+              </div>
+            </div>
+          </div>`).join("")}
+        </div>` : ""}
+
+        <div style="font-size:10px;color:#64748b;font-weight:700;letter-spacing:.04em;margin:8px 0 5px;">📋 ${(t.segments||[]).length > 0 ? '요약 / 통합 정보' : '기본 정보'}</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;">
           ${tdInput("td-airline", "항공사", t.airline||"", "예: Asiana Airlines")}
-          ${tdInput("td-flightNo", "편명", t.flightNo||"", "예: OZ207")}
-          ${tdInput("td-flightArr", "도착 일시", t.flightArr||"", "6/24 (수) 15:30")}
-          ${tdInput("td-flightDep", "출국 일시", t.flightDep||"", "6/26 (금) 23:50")}
-          ${tdInput("td-seat", "좌석", t.seat||"", "Business / 5A")}
-          ${tdInput("td-pnr", "예약번호 (PNR)", t.pnr||"", "ABC123")}
+          ${tdInput("td-flightNo", "편명 (전체)", t.flightNo||"", "예: KE0024 / KE0023")}
+          ${tdInput("td-flightArr", "한국 도착 일시", t.flightArr||"", "6/24 17:20")}
+          ${tdInput("td-flightDep", "한국 출국 일시", t.flightDep||"", "6/30 16:00")}
+          ${tdInput("td-seat", "좌석", t.seat||"", "Prestige · 12D / 11E")}
+          ${tdInput("td-pnr", "예약번호 (PNR)", t.pnr||"", "FU73JI")}
         </div>
       </div>
 
       <!-- 호텔 -->
       <div style="background:#fff;border-radius:8px;padding:11px 13px;margin-bottom:10px;border:1px solid #E2E8F0;">
-        <div style="font-size:11px;font-weight:800;color:#0d9488;letter-spacing:.04em;margin-bottom:8px;">🏨 호텔</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+          <div style="font-size:11px;font-weight:800;color:#0d9488;letter-spacing:.04em;">🏨 Hotel</div>
+          <label style="padding:3px 10px;border-radius:14px;background:linear-gradient(135deg,#0d9488,#0891b2);color:#fff;border:none;cursor:pointer;font-size:10px;font-weight:700;display:inline-flex;align-items:center;gap:3px;" title="Attach hotel voucher PDF → auto-fill">
+            ✨ Auto-Fill
+            <input type="file" accept=".pdf,.txt,.eml" style="display:none;" onchange="autoFillSection('${t.id}','hotel',event)">
+          </label>
+        </div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;">
-          ${tdInput("td-hotelName", "호텔명", t.hotelName||"", "예: Sotetsu Hotel Seoul")}
-          ${tdInput("td-hotelRes", "예약번호", t.hotelRes||"", "예: HTL-2026-0001")}
-          ${tdInput("td-checkIn", "체크인", t.checkIn||"", "6/24 15:00")}
-          ${tdInput("td-checkOut", "체크아웃", t.checkOut||"", "6/26 12:00")}
-          ${tdInput("td-roomType", "객실 타입", t.roomType||"", "Deluxe, Single Bed")}
-          ${tdInput("td-breakfast", "조식 포함", t.breakfast||"", "Y / N")}
+          ${tdInput("td-hotelName", "Hotel", t.hotelName||"", "e.g. THE PLAZA Seoul")}
+          ${tdInput("td-hotelRes", "Confirmation Number", t.hotelRes||"", "e.g. 87216880")}
+          ${tdInput("td-checkIn", "Check In", t.checkIn||"", "e.g. Jun 24, 2026")}
+          ${tdInput("td-checkOut", "Check Out", t.checkOut||"", "e.g. Jun 30, 2026")}
         </div>
       </div>
 
       <!-- 픽업/교통 -->
       <div style="background:#fff;border-radius:8px;padding:11px 13px;margin-bottom:10px;border:1px solid #E2E8F0;">
-        <div style="font-size:11px;font-weight:800;color:#7c3aed;letter-spacing:.04em;margin-bottom:8px;">🚗 픽업·교통</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+          <div style="font-size:11px;font-weight:800;color:#7c3aed;letter-spacing:.04em;">🚗 픽업·교통</div>
+          <label style="padding:3px 10px;border-radius:14px;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;cursor:pointer;font-size:10px;font-weight:700;display:inline-flex;align-items:center;gap:3px;" title="픽업 안내 메일/PDF 첨부 → 자동 채움">
+            ✨ 픽업정보 인식
+            <input type="file" accept=".pdf,.txt,.eml" style="display:none;" onchange="autoFillSection('${t.id}','pickup',event)">
+          </label>
+        </div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;">
           ${tdInput("td-pickupTime", "공항 픽업 시간", t.pickupTime||"", "6/24 15:50")}
           ${tdInput("td-pickupLoc", "픽업 장소", t.pickupLoc||"", "ICN T1 Exit 8")}
@@ -3202,7 +4070,13 @@ function renderTravelDetailPanel(t) {
 
       <!-- 식이·요청·비상연락 -->
       <div style="background:#fff;border-radius:8px;padding:11px 13px;border:1px solid #E2E8F0;">
-        <div style="font-size:11px;font-weight:800;color:#b45309;letter-spacing:.04em;margin-bottom:8px;">📋 식이·요청 사항</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+          <div style="font-size:11px;font-weight:800;color:#b45309;letter-spacing:.04em;">📋 식이·요청 사항</div>
+          <label style="padding:3px 10px;border-radius:14px;background:linear-gradient(135deg,#b45309,#92400e);color:#fff;border:none;cursor:pointer;font-size:10px;font-weight:700;display:inline-flex;align-items:center;gap:3px;" title="여권 사본·이메일 등 첨부 → 자동 채움">
+            ✨ 개인정보 인식
+            <input type="file" accept=".pdf,.txt,.eml" style="display:none;" onchange="autoFillSection('${t.id}','personal',event)">
+          </label>
+        </div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:8px;">
           ${tdInput("td-diet", "식이 제한", t.diet||"", "Vegetarian / Halal / Allergy")}
           ${tdInput("td-passport", "여권 만료일", t.passport||"", "2030-12-31")}
@@ -3239,7 +4113,7 @@ window.toggleTravelDetail = id => {
 
 window.saveTravelDetail = id => {
   const fields = ["airline","flightNo","flightArr","flightDep","seat","pnr",
-                  "hotelName","hotelRes","checkIn","checkOut","roomType","breakfast",
+                  "hotelName","hotelRes","checkIn","checkOut",
                   "pickupTime","pickupLoc","driver","vehicle","dropTime","dropLoc",
                   "diet","passport","emergency","visa","notes"];
   const updates = {};
@@ -3253,6 +4127,42 @@ window.saveTravelDetail = id => {
   alert("✅ 출장 상세 정보가 저장되었습니다.");
   draw();
 };
+
+// ── 항공편 구간 편집 ─────────────────────────────────
+window.setSegment = (travelId, segIdx, key, value) => {
+  TRAVEL_DETAIL = TRAVEL_DETAIL.map(t => {
+    if (t.id !== travelId) return t;
+    const segs = [...(t.segments||[])];
+    if (!segs[segIdx]) return t;
+    segs[segIdx] = {...segs[segIdx], [key]: value.trim().toUpperCase().substring(0,4) === value.trim().toUpperCase() && (key==='from'||key==='to') ? value.trim().toUpperCase() : value.trim()};
+    return {...t, segments: segs};
+  });
+  scheduleSave();
+};
+
+window.addFlightSegment = (travelId) => {
+  TRAVEL_DETAIL = TRAVEL_DETAIL.map(t => {
+    if (t.id !== travelId) return t;
+    const segs = [...(t.segments||[])];
+    segs.push({flightNo:"", airline:"", from:"", to:"", depTime:"", arrTime:"", seat:""});
+    return {...t, segments: segs};
+  });
+  scheduleSave();
+  draw();
+};
+
+window.delFlightSegment = (travelId, segIdx) => {
+  if (!confirm("이 구간을 삭제하시겠습니까?")) return;
+  TRAVEL_DETAIL = TRAVEL_DETAIL.map(t => {
+    if (t.id !== travelId) return t;
+    const segs = (t.segments||[]).filter((_, i) => i !== segIdx);
+    return {...t, segments: segs.length > 0 ? segs : undefined};
+  });
+  scheduleSave();
+  draw();
+};
+
+const __saveTravelDetail_orig = window.saveTravelDetail;
 
 window.toggleTravelAttach = id => {
   window._travelAttachId = (window._travelAttachId === id) ? null : id;
