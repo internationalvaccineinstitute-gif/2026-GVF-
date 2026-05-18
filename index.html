@@ -3420,9 +3420,49 @@ async function extractTextFromFile(file) {
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
       const content = await page.getTextContent();
-      pages.push(content.items.map(it => it.str).join(" "));
+      // ── Y 좌표 기준으로 같은 줄끼리 묶어서 순서 보존 ──
+      // 각 item: {str, transform: [a,b,c,d,e,f]} — e=x, f=y
+      const items = content.items.map(it => ({
+        str: it.str,
+        x: it.transform[4],
+        y: it.transform[5]
+      })).filter(it => it.str && it.str.trim());
+
+      // Y 좌표가 비슷한 것끼리 묶기 (±3px 허용)
+      const lines = [];
+      items.forEach(it => {
+        const line = lines.find(l => Math.abs(l.y - it.y) < 3);
+        if (line) {
+          line.items.push(it);
+        } else {
+          lines.push({y: it.y, items: [it]});
+        }
+      });
+      // 같은 줄 안에서 X 순서로 정렬, 줄 자체는 Y 큰 순서(위→아래)
+      lines.sort((a, b) => b.y - a.y);
+      lines.forEach(line => {
+        line.items.sort((a, b) => a.x - b.x);
+      });
+
+      // 각 줄을 문자열로 변환 + 줄간 더블 스페이스로 컬럼 표시
+      const pageText = lines.map(line => {
+        let lineStr = "";
+        let prevEnd = -Infinity;
+        line.items.forEach((it, idx) => {
+          // X 좌표 간격이 크면 (컬럼 구분) 더 많은 공백 추가
+          if (idx > 0 && it.x - prevEnd > 20) {
+            lineStr += "    ";  // 4 spaces = column separator
+          } else if (idx > 0) {
+            lineStr += " ";
+          }
+          lineStr += it.str;
+          prevEnd = it.x + (it.str.length * 4); // 대략적 너비
+        });
+        return lineStr;
+      }).join("\n");
+      pages.push(pageText);
     }
-    return pages.join("\n");
+    return pages.join("\n\n");
   }
   if (/\.(txt|eml)$/i.test(file.name) || file.type.startsWith("text/")) {
     return await file.text();
@@ -3647,27 +3687,49 @@ function parseHotelInfo(text) {
   // ── 3) 체크인/체크아웃 ─────────────────────────────
   const dateRegexStr = "(\\d{1,2}[A-Z]{3}\\d{2,4}(?:\\s*\\([A-Z]{3}\\))?|\\d{1,2}\\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*(?:,?\\s+\\d{4})?|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\s+\\d{1,2}(?:,?\\s+\\d{2,4})?|\\d{4}[-\\/.]\\d{1,2}[-\\/.]\\d{1,2}|\\d{1,2}[-\\/.]\\d{1,2}[-\\/.]\\d{2,4})";
 
-  const ciM = orig.match(new RegExp(
-    `(?:Check[-\\s]*[Ii]n(?:\\s+Date)?|Arrival(?:\\s+Date)?|Arriving|입실|체크인|숙박\\s*시작)[\\s:\\-]*${dateRegexStr}`, "i"
-  ));
-  if (ciM) out.checkIn = ciM[1].trim();
+  // ── 3) 체크인/체크아웃 ─────────────────────────────
+  // 더 정밀한 매칭: 같은 줄 안에서 라벨 + 날짜 찾기 (PDF 컬럼 레이아웃 대응)
+  // 단어가 떨어져 있어도 OK ("Jun 24, 2026 Wednesday" 같은 패턴 포함)
+  const fullDateInLine = "(?:(\\d{1,2})[A-Z]{3}\\d{2,4}|(\\d{1,2})\\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*(?:,?\\s+\\d{2,4})?|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\.?\\s+\\d{1,2}(?:,?\\s+\\d{2,4})?|\\d{4}[-\\/.]\\d{1,2}[-\\/.]\\d{1,2}|\\d{1,2}[-\\/.]\\d{1,2}[-\\/.]\\d{2,4})";
 
-  const coM = orig.match(new RegExp(
-    `(?:Check[-\\s]*[Oo]ut(?:\\s+Date)?|Departure(?:\\s+Date)?|Departing|퇴실|체크아웃|숙박\\s*종료)[\\s:\\-]*${dateRegexStr}`, "i"
-  ));
-  if (coM) out.checkOut = coM[1].trim();
+  // 줄 단위로 검색 (PDF 좌표 정렬로 한 줄에 라벨+값이 같이 있음)
+  const lines = orig.split(/\n/);
+  for (const line of lines) {
+    if (!out.checkIn && /Check[\s\-]*[Ii]n(?:\s+Date)?|Arrival\s+Date|입실|체크인/i.test(line)) {
+      const m = line.match(new RegExp(fullDateInLine));
+      if (m) out.checkIn = m[0].trim();
+    }
+    if (!out.checkOut && /Check[\s\-]*[Oo]ut(?:\s+Date)?|Departure\s+Date|퇴실|체크아웃/i.test(line)) {
+      const m = line.match(new RegExp(fullDateInLine));
+      if (m) out.checkOut = m[0].trim();
+    }
+  }
+
+  // 줄 단위로 못 찾으면 전체 텍스트에서 라벨 인접 매칭 (백업)
+  if (!out.checkIn) {
+    const ciM = orig.match(new RegExp(
+      `(?:Check[-\\s]*[Ii]n(?:\\s+Date)?|Arrival(?:\\s+Date)?|Arriving|입실|체크인|숙박\\s*시작)[\\s:\\-]*${fullDateInLine}`, "i"
+    ));
+    if (ciM) out.checkIn = ciM[0].replace(/^[^A-Z0-9]*(?:Check[-\s]*[Ii]n(?:\s+Date)?|Arrival(?:\s+Date)?|Arriving|입실|체크인|숙박\s*시작)[\s:\-]*/i, "").trim();
+  }
+  if (!out.checkOut) {
+    const coM = orig.match(new RegExp(
+      `(?:Check[-\\s]*[Oo]ut(?:\\s+Date)?|Departure(?:\\s+Date)?|Departing|퇴실|체크아웃|숙박\\s*종료)[\\s:\\-]*${fullDateInLine}`, "i"
+    ));
+    if (coM) out.checkOut = coM[0].replace(/^[^A-Z0-9]*(?:Check[-\s]*[Oo]ut(?:\s+Date)?|Departure(?:\s+Date)?|Departing|퇴실|체크아웃|숙박\s*종료)[\s:\-]*/i, "").trim();
+  }
 
   // 미발견 시 연속 2개 날짜 (취소정책 날짜 등 배제)
   if (!out.checkIn || !out.checkOut) {
     const allDates = [];
-    const reDates = new RegExp(dateRegexStr, "gi");
+    const reDates = new RegExp(fullDateInLine, "gi");
     let dm;
     while ((dm = reDates.exec(orig)) !== null) {
-      const before = orig.substring(Math.max(0,dm.index-30), dm.index).toLowerCase();
-      if (/issued|sent|today|email|invoice\s*date|order\s*date|booked\s*on|cancel|policy|prior\s+to|by\s+\d/i.test(before)) continue;
-      const after = orig.substring(dm.index + dm[1].length, dm.index + dm[1].length + 10).toLowerCase();
+      const before = orig.substring(Math.max(0,dm.index-40), dm.index).toLowerCase();
+      if (/issued|sent|today|email|invoice\s*date|order\s*date|booked\s*on|cancel|policy|prior\s+to|by\s+\d|advise|advance|notice/i.test(before)) continue;
+      const after = orig.substring(dm.index + dm[0].length, dm.index + dm[0].length + 15).toLowerCase();
       if (/^\s*(pm|am|p\.m\.|a\.m\.)/i.test(after)) continue;
-      allDates.push(dm[1]);
+      allDates.push(dm[0]);
     }
     if (allDates.length >= 2) {
       if (!out.checkIn) out.checkIn = allDates[0];
@@ -3676,6 +3738,20 @@ function parseHotelInfo(text) {
       out.checkIn = allDates[0];
     }
   }
+
+  // 체크인/체크아웃이 같은 형식이고 연도가 빠진 경우 다른 쪽에서 보강
+  // 예: "Jun 30, 24" → "Jun 30, 2024" 처럼 부정확한 연도 제거
+  const fixYear = (s) => {
+    if (!s) return s;
+    // "Jun 30, 24" 같은 2자리 연도를 정상 4자리로 (PDF 추출 단편화 보정)
+    s = s.replace(/(\b[A-Z][a-z]{2}\.?\s+\d{1,2},?\s+)(\d{2})\b(?!\d)/i, (m, p1, p2) => {
+      const yr = parseInt(p2);
+      return p1 + (yr < 50 ? "20"+p2 : "19"+p2);
+    });
+    return s.trim();
+  };
+  if (out.checkIn) out.checkIn = fixYear(out.checkIn);
+  if (out.checkOut) out.checkOut = fixYear(out.checkOut);
 
   // ── 4) 객실 타입 ───────────────────────────────────
   let roomM = orig.match(/(?:Room\s+Type|Room\s+Category|객실\s*(?:타입|종류))\s*[:：]?\s*([^\n\r]{3,60}?)(?=\s*(?:Preference|Number\s+of|Nightly|$|\n))/i);
@@ -4023,12 +4099,12 @@ function renderTravelDetailPanel(t) {
 
         <div style="font-size:10px;color:#64748b;font-weight:700;letter-spacing:.04em;margin:8px 0 5px;">📋 ${(t.segments||[]).length > 0 ? '요약 / 통합 정보' : '기본 정보'}</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;">
-          ${tdInput("td-airline", "항공사", t.airline||"", "예: Asiana Airlines")}
-          ${tdInput("td-flightNo", "편명 (전체)", t.flightNo||"", "예: KE0024 / KE0023")}
-          ${tdInput("td-flightArr", "한국 도착 일시", t.flightArr||"", "6/24 17:20")}
-          ${tdInput("td-flightDep", "한국 출국 일시", t.flightDep||"", "6/30 16:00")}
-          ${tdInput("td-seat", "좌석", t.seat||"", "Prestige · 12D / 11E")}
-          ${tdInput("td-pnr", "예약번호 (PNR)", t.pnr||"", "FU73JI")}
+          ${tdInput("td-airline", "항공사", t.airline||"", "")}
+          ${tdInput("td-flightNo", "편명 (전체)", t.flightNo||"", "")}
+          ${tdInput("td-flightArr", "한국 도착 일시", t.flightArr||"", "")}
+          ${tdInput("td-flightDep", "한국 출국 일시", t.flightDep||"", "")}
+          ${tdInput("td-seat", "좌석", t.seat||"", "")}
+          ${tdInput("td-pnr", "예약번호 (PNR)", t.pnr||"", "")}
         </div>
       </div>
 
@@ -4042,10 +4118,10 @@ function renderTravelDetailPanel(t) {
           </label>
         </div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;">
-          ${tdInput("td-hotelName", "Hotel", t.hotelName||"", "e.g. THE PLAZA Seoul")}
-          ${tdInput("td-hotelRes", "Confirmation Number", t.hotelRes||"", "e.g. 87216880")}
-          ${tdInput("td-checkIn", "Check In", t.checkIn||"", "e.g. Jun 24, 2026")}
-          ${tdInput("td-checkOut", "Check Out", t.checkOut||"", "e.g. Jun 30, 2026")}
+          ${tdInput("td-hotelName", "Hotel", t.hotelName||"", "")}
+          ${tdInput("td-hotelRes", "Confirmation Number", t.hotelRes||"", "")}
+          ${tdInput("td-checkIn", "Check In", t.checkIn||"", "")}
+          ${tdInput("td-checkOut", "Check Out", t.checkOut||"", "")}
         </div>
       </div>
 
@@ -4059,12 +4135,12 @@ function renderTravelDetailPanel(t) {
           </label>
         </div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;">
-          ${tdInput("td-pickupTime", "공항 픽업 시간", t.pickupTime||"", "6/24 15:50")}
-          ${tdInput("td-pickupLoc", "픽업 장소", t.pickupLoc||"", "ICN T1 Exit 8")}
-          ${tdInput("td-driver", "운전기사", t.driver||"", "김기사 / 010-1234-5678")}
-          ${tdInput("td-vehicle", "차량", t.vehicle||"", "검정 카니발 12가 3456")}
-          ${tdInput("td-dropTime", "샌딩 시간", t.dropTime||"", "6/26 20:00")}
-          ${tdInput("td-dropLoc", "샌딩 도착지", t.dropLoc||"", "ICN T1")}
+          ${tdInput("td-pickupTime", "공항 픽업 시간", t.pickupTime||"", "")}
+          ${tdInput("td-pickupLoc", "픽업 장소", t.pickupLoc||"", "")}
+          ${tdInput("td-driver", "운전기사", t.driver||"", "")}
+          ${tdInput("td-vehicle", "차량", t.vehicle||"", "")}
+          ${tdInput("td-dropTime", "샌딩 시간", t.dropTime||"", "")}
+          ${tdInput("td-dropLoc", "샌딩 도착지", t.dropLoc||"", "")}
         </div>
       </div>
 
@@ -4078,10 +4154,10 @@ function renderTravelDetailPanel(t) {
           </label>
         </div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:8px;">
-          ${tdInput("td-diet", "식이 제한", t.diet||"", "Vegetarian / Halal / Allergy")}
-          ${tdInput("td-passport", "여권 만료일", t.passport||"", "2030-12-31")}
-          ${tdInput("td-emergency", "비상 연락처", t.emergency||"", "010-1234-5678 (Spouse)")}
-          ${tdInput("td-visa", "비자", t.visa||"", "면제 / 발급완료 / 진행중")}
+          ${tdInput("td-diet", "식이 제한", t.diet||"", "")}
+          ${tdInput("td-passport", "여권 만료일", t.passport||"", "")}
+          ${tdInput("td-emergency", "비상 연락처", t.emergency||"", "")}
+          ${tdInput("td-visa", "비자", t.visa||"", "")}
         </div>
         <div>
           <label style="font-size:10px;color:#64748b;font-weight:700;display:block;margin-bottom:3px;">💬 메모 / 특이사항</label>
