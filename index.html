@@ -3479,84 +3479,177 @@ function parseFlightInfo(text) {
   const orig = text;
   const t = text.replace(/\s+/g, " ");
   const out = {segments: []};
-
-  // ── 1) 모든 일시 추출 ──────────────────────────────
   const monMap = {JAN:"01",FEB:"02",MAR:"03",APR:"04",MAY:"05",JUN:"06",JUL:"07",AUG:"08",SEP:"09",OCT:"10",NOV:"11",DEC:"12"};
+
+  // ── 0) 기준 연도 추정 ─────────────────────────────────
+  // Issue Date, Booking Date, Validity 등에서 연도 추출
+  let baseYear = "";
+  const yearM = orig.match(/(?:Issue\s+Date|Booking\s+Date|Validity|Not\s+Valid|Date\s+of\s+Issue|Issued?\s+On)[^\n]{0,80}?(20\d{2})/i)
+             || orig.match(/(?:20\d{2})/);
+  if (yearM) baseYear = yearM[1] || yearM[0];
+  // 백업: Validity의 "24JUN26" 패턴
+  if (!baseYear) {
+    const vM = orig.match(/\b\d{1,2}[A-Z]{3}(\d{2})\b/);
+    if (vM) baseYear = "20" + vM[1];
+  }
+  if (!baseYear) baseYear = String(new Date().getFullYear());
+
+  // ── 1) 모든 일시 추출 (4가지 포맷) ───────────────────
   const allDateTimes = [];
+  // 포맷 A: 23JUN26(TUE) 12:40 → 2026-06-23 12:40
   const reA = /\b(\d{1,2})([A-Z]{3})(\d{2,4})(?:\s*\([A-Z]{3}\))?\s*(\d{1,2}[:.]\d{2})\b/gi;
-  let am;
-  while ((am = reA.exec(orig)) !== null) {
-    const day = am[1].padStart(2,"0");
-    const mon = monMap[am[2].toUpperCase()] || "01";
-    let yr = am[3];
+  let m;
+  while ((m = reA.exec(orig)) !== null) {
+    const day = m[1].padStart(2,"0");
+    const mon = monMap[m[2].toUpperCase()] || "01";
+    let yr = m[3];
     if (yr.length === 2) yr = "20" + yr;
-    allDateTimes.push({pos: am.index, display: `${yr}-${mon}-${day} ${am[4].replace(".",":")}`});
+    allDateTimes.push({pos: m.index, display: `${yr}-${mon}-${day} ${m[4].replace(".",":")}`, source: "A"});
   }
+  // 포맷 B (Sabre): 24JUN 12:05 → 연도 추정 사용
+  const reB = /\b(\d{1,2})([A-Z]{3})\s+(\d{1,2}[:.]\d{2})\b(?!\d)/gi;
+  while ((m = reB.exec(orig)) !== null) {
+    // 포맷 A와 중복되지 않게 (연도 없음을 확인)
+    const overlap = allDateTimes.some(d => Math.abs(d.pos - m.index) < 5);
+    if (overlap) continue;
+    const day = m[1].padStart(2,"0");
+    const mon = monMap[m[2].toUpperCase()] || "01";
+    allDateTimes.push({pos: m.index, display: `${baseYear}-${mon}-${day} ${m[3].replace(".",":")}`, source: "B"});
+  }
+  // 포맷 C (Thai): 시간과 날짜가 분리 — 시간 라인 위치 + 가까운 날짜 라인 결합
+  // "08:00" / "Mon, 22 Jun 2026" 같이 두 줄로
+  const lines = orig.split(/\n/);
+  // 시간만 있는 라인과 "Day, DD Mon YYYY" 라인 위치 추적
+  const linePositions = [];
+  let cursor = 0;
+  lines.forEach(line => {
+    linePositions.push({line, start: cursor, end: cursor + line.length});
+    cursor += line.length + 1;
+  });
+  // 각 라인에서 단독 시간 (HH:MM) 찾기
+  linePositions.forEach((lp, idx) => {
+    // 라인이 짧고 시간 패턴만 있는 경우
+    const timeOnly = lp.line.match(/^\s*(\d{1,2}[:.]\d{2})\s*$/);
+    if (timeOnly) {
+      // 다음 2~3 라인 안에서 "Day, DD Mon YYYY" 찾기
+      for (let j = idx + 1; j < Math.min(idx + 4, linePositions.length); j++) {
+        const dateM = linePositions[j].line.match(/(?:[A-Z][a-z]{2},?\s+)?(\d{1,2})\s+([A-Z][a-z]{2})[a-z]*\.?\s+(20\d{2})/);
+        if (dateM) {
+          const day = dateM[1].padStart(2,"0");
+          const mon = monMap[dateM[2].toUpperCase().substring(0,3)] || "01";
+          const yr = dateM[3];
+          allDateTimes.push({pos: lp.start, display: `${yr}-${mon}-${day} ${timeOnly[1].replace(".",":")}`, source: "C"});
+          break;
+        }
+      }
+    }
+  });
+  // 포맷 D: 24 Jun 2026 / Jun 24 2026 / 2026-06-24 등 (B,C와 중복 안 되게)
+  // 이건 보통 백업이라 일단 생략 (Norihisa·Kiat는 위 3개로 충분)
 
-  // ── 2) 모든 편명 추출 (PNR 제외) ──────────────────
+  allDateTimes.sort((a,b) => a.pos - b.pos);
+
+  // ── 2) 편명 추출 ────────────────────────────────────
+  const KNOWN_CARRIERS = ["OZ","KE","AA","DL","UA","JL","NH","TG","SQ","CX","AF","LH","BA","QF","EK","QR","ET","VN","PR","MH","CI","BR","GA","BI","CA","CZ","MU","HU","XJ","KL","IB","TK","SU","AS","WN","B6","F9","NK","AC","WS","LX","AY","SK","LO","OS","JJ","LA","AV","AM","CM","AR","AZ","TP","FI","AI","6E","UK","SG","TR","MI","DG","RA","KB","TZ"];
   const flightCodes = [];
+  // 공백 1개까지 허용: "OZ 1075", "TG 652", "KE0024" 모두
   const reF = /\b([A-Z]{2})\s?(\d{2,4})\b/g;
-  let fm;
-  while ((fm = reF.exec(orig)) !== null) {
-    const before = orig.substring(Math.max(0, fm.index - 40), fm.index).toLowerCase();
-    if (/booking\s*ref|reference|reservation|record\s*locator|^pnr|\spnr|ticket\s*(number|no)/.test(before)) continue;
-    flightCodes.push({pos: fm.index, full: fm[1]+fm[2], airline: fm[1]});
+  while ((m = reF.exec(orig)) !== null) {
+    const code = m[1];
+    if (!KNOWN_CARRIERS.includes(code)) continue;
+    const before = orig.substring(Math.max(0, m.index - 40), m.index).toLowerCase();
+    if (/booking\s*ref|reference|reservation|record\s*locator|^pnr|\spnr|ticket\s*(number|no)|fare\s*basis|class\b|operated\s+by/.test(before)) continue;
+    const num = m[2];
+    flightCodes.push({pos: m.index, full: code + num.padStart(3, "0"), airline: code});
   }
-
-  // ── 3) 모든 공항코드 추출 ──────────────────────────
-  const airportPattern = /\b(ADD|SFO|ICN|GMP|LAX|JFK|NRT|HND|PEK|PVG|HKG|SIN|BKK|TPE|FRA|LHR|CDG|AMS|MAD|FCO|SYD|YYZ|YVR|ATL|ORD|DFW|MIA|BOS|SEA|IAD|EWR|MEX|GRU|SCL|DOH|DXB|AUH|JNB|CAI|IST|DEL|BOM|MNL|KUL|CGK|SGN|HAN|TLV|MUC|ZRH|VIE|BRU|CPH|ARN|OSL|HEL|WAW|PRG|ATH|LIS|DUB|BCN|GVA|YUL|YHZ|DEN|PHX|LAS|MSP|DTW|PHL|CLT|MCO|FLL|TPA|RDU|BNA|HNL|ANC|GUM)\b/g;
-  const airports = [];
-  let ap;
-  while ((ap = airportPattern.exec(orig)) !== null) {
-    airports.push({pos: ap.index, code: ap[1]});
-  }
-
-  // ── 4) 좌석 ────────────────────────────────────────
-  const seats = [];
-  const seatPattern = /(?:Seat\s*Number|Seat\s*No\.?|좌석\s*번호)\s*([0-9]{1,3}[A-Z])\b/gi;
-  let sm;
-  while ((sm = seatPattern.exec(orig)) !== null) {
-    seats.push({pos: sm.index, val: sm[1].toUpperCase()});
-  }
-
-  // ── 5) 구간 마커 위치 찾기 ────────────────────────
-  // TOPAS e-Ticket은 "1 SAN FRANCISCO" / "2 SEOUL" 처럼 큰 숫자로 구간 시작 표시
-  // 또는 단순히 첫 편명 위치를 구간 시작으로
-  //
-  // 전략: 편명을 위치 순으로 정렬하고, "같은 편명이 가까이 있으면" 같은 구간으로 묶음
-  // PDF에서 한 구간 안에 편명이 2번 나오는 경우 많음 (큰 표시 + 작은 표시)
-
   flightCodes.sort((a,b) => a.pos - b.pos);
 
-  // 같은 편명이 200자 이내 거리에 있으면 같은 구간으로 병합
+  // 중복 편명 병합 (같은 편명이 300자 이내)
   const flightGroups = [];
   flightCodes.forEach(fc => {
     const last = flightGroups[flightGroups.length - 1];
     if (last && last.full === fc.full && (fc.pos - last.endPos) < 300) {
-      // 같은 편명 → 같은 그룹의 끝점 확장
       last.endPos = fc.pos;
     } else {
-      // 새 구간
-      flightGroups.push({
-        full: fc.full,
-        airline: fc.airline,
-        startPos: fc.pos,
-        endPos: fc.pos,
-      });
+      flightGroups.push({full: fc.full, airline: fc.airline, startPos: fc.pos, endPos: fc.pos});
     }
   });
 
-  // ── 6) 각 구간에 정보 할당 ──────────────────────────
+  // ── 3) 공항코드 추출 (IATA 우선, 없으면 도시명 → IATA 변환) ─
+  const airportPattern = /\b(ADD|SFO|ICN|GMP|LAX|JFK|NRT|HND|KIX|ITM|NGO|FUK|CTS|OKA|PEK|PVG|SHA|HKG|SIN|BKK|DMK|TPE|TSA|KHH|HNL|FRA|LHR|LGW|CDG|ORY|AMS|MAD|FCO|SYD|MEL|BNE|YYZ|YVR|ATL|ORD|DFW|MIA|BOS|SEA|IAD|EWR|MEX|GRU|SCL|DOH|DXB|AUH|JNB|CAI|IST|DEL|BOM|MAA|BLR|MNL|CEB|KUL|PEN|CGK|DPS|SGN|HAN|DAD|TLV|MUC|ZRH|VIE|BRU|CPH|ARN|OSL|HEL|WAW|PRG|ATH|LIS|DUB|BCN|GVA|YUL|YHZ|DEN|PHX|LAS|MSP|DTW|PHL|CLT|MCO|FLL|TPA|RDU|BNA|ANC|GUM|KMG|XIY|CTU|CSX|CKG|CAN|SZX|XMN)\b/g;
+  const airports = [];
+  while ((m = airportPattern.exec(orig)) !== null) {
+    airports.push({pos: m.index, code: m[1]});
+  }
+
+  // 도시명 → IATA 코드 매핑 (Sabre, Thai 같이 IATA 없는 포맷)
+  const CITY_TO_IATA = {
+    "TOKYO HANEDA": "HND", "TOKYO NARITA": "NRT", "TOKYO": "NRT",
+    "SEOUL GIMPO": "GMP", "SEOUL INCHEON": "ICN", "SEOUL": "ICN",
+    "OSAKA KANSAI": "KIX", "OSAKA ITAMI": "ITM", "OSAKA": "KIX",
+    "NAGOYA": "NGO", "FUKUOKA": "FUK", "SAPPORO": "CTS", "OKINAWA": "OKA",
+    "BANGKOK SUVARNABHUMI": "BKK", "BANGKOK DON MUEANG": "DMK", "BANGKOK": "BKK",
+    "SAN FRANCISCO": "SFO", "LOS ANGELES": "LAX", "NEW YORK": "JFK",
+    "BEIJING": "PEK", "SHANGHAI PUDONG": "PVG", "SHANGHAI": "PVG",
+    "HONG KONG": "HKG", "SINGAPORE": "SIN", "TAIPEI": "TPE",
+    "FRANKFURT": "FRA", "LONDON HEATHROW": "LHR", "LONDON": "LHR",
+    "PARIS": "CDG", "AMSTERDAM": "AMS", "MADRID": "MAD",
+    "ROME": "FCO", "SYDNEY": "SYD", "MELBOURNE": "MEL",
+    "TORONTO": "YYZ", "VANCOUVER": "YVR",
+    "MEXICO CITY": "MEX", "SAO PAULO": "GRU",
+    "DUBAI": "DXB", "DOHA": "DOH", "ABU DHABI": "AUH",
+    "DELHI": "DEL", "MUMBAI": "BOM", "ADDIS ABABA": "ADD",
+    "MANILA": "MNL", "KUALA LUMPUR": "KUL", "JAKARTA": "CGK",
+    "HO CHI MINH": "SGN", "HANOI": "HAN", "DANANG": "DAD",
+    "ISTANBUL": "IST", "JOHANNESBURG": "JNB", "CAIRO": "CAI",
+  };
+  const cityAirports = [];
+  Object.entries(CITY_TO_IATA).forEach(([city, iata]) => {
+    const re = new RegExp(`\\b${city.replace(/ /g, "\\s+")}\\b`, "gi");
+    let cm;
+    while ((cm = re.exec(orig)) !== null) {
+      // 같은 위치에 이미 IATA가 있으면 스킵 (중복 방지)
+      const dup = airports.some(a => Math.abs(a.pos - cm.index) < 50);
+      if (dup) continue;
+      cityAirports.push({pos: cm.index, code: iata, matched: city});
+    }
+  });
+  // 도시명 매칭 결과를 airports에 병합
+  cityAirports.forEach(ca => airports.push(ca));
+  airports.sort((a,b) => a.pos - b.pos);
+
+  // ── 4) 좌석 ────────────────────────────────────────
+  const seats = [];
+  const seatPattern = /(?:Seat\s*Number|Seat\s*No\.?|좌석\s*번호|Seat\s*[:#]?)\s*([0-9]{1,3}[A-Z])\b/gi;
+  while ((m = seatPattern.exec(orig)) !== null) {
+    seats.push({pos: m.index, val: m[1].toUpperCase()});
+  }
+
+  // ── 5) 구간 조립 ────────────────────────────────────
+  const carriers = {
+    OZ:"Asiana Airlines", KE:"Korean Air", AA:"American Airlines",
+    DL:"Delta", UA:"United", JL:"Japan Airlines", NH:"ANA (All Nippon Airways)",
+    TG:"Thai Airways", SQ:"Singapore Airlines", CX:"Cathay Pacific",
+    AF:"Air France", LH:"Lufthansa", BA:"British Airways",
+    QF:"Qantas", EK:"Emirates", QR:"Qatar Airways", ET:"Ethiopian Airlines",
+    VN:"Vietnam Airlines", PR:"Philippine Airlines", MH:"Malaysia Airlines",
+    CI:"China Airlines", BR:"EVA Air", GA:"Garuda Indonesia", BI:"Royal Brunei",
+    CA:"Air China", CZ:"China Southern", MU:"China Eastern", HU:"Hainan Airlines",
+    KL:"KLM", IB:"Iberia", TK:"Turkish Airlines", SU:"Aeroflot",
+    AS:"Alaska Airlines", AC:"Air Canada", WS:"WestJet", LX:"Swiss",
+    AY:"Finnair", SK:"SAS", LO:"LOT Polish", OS:"Austrian Airlines",
+    LA:"LATAM", AV:"Avianca", AM:"Aeromexico", AR:"Aerolineas Argentinas",
+    AZ:"ITA Airways", TP:"TAP Portugal", FI:"Icelandair", AI:"Air India"
+  };
+
   const usedDate = new Set();
   const usedAirport = new Set();
   const usedSeat = new Set();
 
   flightGroups.forEach((g, gi) => {
-    // 이 구간의 범위: 시작 ~ 다음 구간 시작 (또는 +500)
-    const nextStart = flightGroups[gi + 1]?.startPos ?? (g.endPos + 600);
+    const nextStart = flightGroups[gi + 1]?.startPos ?? (g.endPos + 800);
     const rangeStart = Math.max(0, g.startPos - 250);
 
-    // 이 구간 안의 미사용 정보
     const segDates = allDateTimes.filter(d => d.pos >= rangeStart && d.pos < nextStart && !usedDate.has(d.pos))
                                   .sort((a,b) => a.pos - b.pos);
     const segAirports = airports.filter(a => a.pos >= rangeStart && a.pos < nextStart && !usedAirport.has(a.pos))
@@ -3564,7 +3657,6 @@ function parseFlightInfo(text) {
     const segSeats = seats.filter(s => s.pos >= rangeStart && s.pos < nextStart && !usedSeat.has(s.pos))
                           .sort((a,b) => a.pos - b.pos);
 
-    // 공항도 같은 코드가 가깝게 두 번 나올 수 있으므로 중복 제거 (인접 동일 코드 합치기)
     const uniqAirports = [];
     segAirports.forEach(a => {
       const last = uniqAirports[uniqAirports.length - 1];
@@ -3588,15 +3680,6 @@ function parseFlightInfo(text) {
     });
   });
 
-  // ── 7) 호환성 필드 ─────────────────────────────────
-  const carriers = {
-    OZ:"Asiana Airlines", KE:"Korean Air", AA:"American Airlines",
-    DL:"Delta", UA:"United", JL:"Japan Airlines", NH:"ANA",
-    TG:"Thai Airways", SQ:"Singapore Airlines", CX:"Cathay Pacific",
-    AF:"Air France", LH:"Lufthansa", BA:"British Airways",
-    QF:"Qantas", EK:"Emirates", QR:"Qatar Airways", ET:"Ethiopian Airlines",
-    VN:"Vietnam Airlines", PR:"Philippine Airlines", MH:"Malaysia Airlines"
-  };
   if (out.segments.length >= 1) out.flightArr = out.segments[0].arrTime || out.segments[0].depTime;
   if (out.segments.length >= 2) out.flightDep = out.segments[out.segments.length - 1].depTime;
   if (out.segments.length > 0) {
@@ -3605,7 +3688,7 @@ function parseFlightInfo(text) {
   }
 
   // PNR
-  const pnrM = orig.match(/(?:Booking\s+Reference|Booking\s+Ref\.?|Booking\s+Code|Reservation\s+(?:Code|Number)|Record\s+Locator|PNR|Confirmation\s+(?:Number|Code|#)|예약\s*(?:번호|코드))[\s:#]*([A-Z0-9]{5,8})\b/i);
+  const pnrM = orig.match(/(?:Booking\s+(?:Reference|Ref\.?|Code)|Reservation\s+(?:Code|Number)|Record\s+Locator|PNR|Confirmation\s+(?:Number|Code|#))[\s:#]*\(?[A-Z0-9]{0,3}\)?[\s:]*([A-Z0-9]{5,8})\b/i);
   if (pnrM) out.pnr = pnrM[1].toUpperCase();
 
   return out;
