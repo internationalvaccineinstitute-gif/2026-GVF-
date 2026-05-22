@@ -2574,6 +2574,7 @@ function pageSpeakers() {
       .map(({l,v,c,bg})=>`<div style="background:${bg};border-radius:9px;padding:10px 16px;display:flex;align-items:center;gap:8px;box-shadow:0 1px 4px rgba(0,0,0,.06);"><span style="font-size:22px;font-weight:800;color:${c};">${v}</span><span style="font-size:12px;font-weight:600;color:${c};">${l}</span></div>`).join("")}
   </div>
   <div style="display:flex;justify-content:flex-end;margin-bottom:12px;gap:6px;">
+    <button class="btn btn-sm" style="background:#fff;color:#1B4FA0;border:1px solid #BFDBFE;" onclick="resortByAgenda()" title="Agenda 등장 순서로 강제 재정렬 (수동 순서 무시)">📋 Agenda 순서로 재정렬</button>
     <button class="btn btn-sm" style="background:${spReorderMode?'#1B4FA0':'#fff'};color:${spReorderMode?'#fff':'#1B4FA0'};border:1px solid #BFDBFE;" onclick="toggleSpReorder()">${spReorderMode?'✅ 순서 저장':'🔀 순서 편집'}</button>
     ${spReorderMode?`<button class="btn btn-sm" style="background:#fff;color:#92400e;border:1px solid #FDE68A;" onclick="resetSpOrder()" title="수동 순서 초기화 (Agenda 순서로 복원)">🔄 초기화</button>`:''}
     <button class="btn btn-sm" style="background:#16a34a;color:#fff;border:none;" onclick="toggleSpAdd()">➕ 연사 추가</button>
@@ -2603,7 +2604,40 @@ function pageSpeakers() {
     </div>`;
   }
   // ── 정렬: 1) 수동 순서(order) → 2) Agenda 등장 순 → 3) 이름순 ─────
-  const agendaOrderMap = buildAgendaOrderMap();
+  // Agenda 매칭을 위해 ID 바인딩 먼저 수행
+  if (AGENDA_ROWS) {
+    AGENDA_ROWS.forEach(r => {
+      if (r.type !== "row" || !r.speakers) return;
+      r.speakers.forEach(sp => {
+        if (!sp.spId && sp.name) {
+          const norm = normalizeSpName(sp.name);
+          const master = SP.find(s => normalizeSpName(s.name) === norm);
+          if (master) sp.spId = master.id;
+        }
+      });
+    });
+  }
+
+  // Agenda에 등장하는 순서대로 spId 맵 구성 (ID 우선, 이름 차선)
+  const agendaOrderMap = new Map();  // spId → order
+  const agendaOrderByName = new Map(); // normalizedName → order
+  let agIdx = 0;
+  const rows = AGENDA_ROWS || parseAgendaToRows(AGENDA_HTML);
+  rows.forEach(r => {
+    if (r.type === "row" && r.speakers && r.speakers.length > 0) {
+      r.speakers.forEach(sp => {
+        if (sp.spId && !agendaOrderMap.has(sp.spId)) {
+          agendaOrderMap.set(sp.spId, agIdx++);
+        } else if (sp.name && !agendaOrderByName.has(normalizeSpName(sp.name))) {
+          agendaOrderByName.set(normalizeSpName(sp.name), agIdx++);
+        }
+      });
+    }
+  });
+
+  console.log(`[LOP 정렬] SP 총 ${SP.length}명, Agenda 매칭(ID) ${agendaOrderMap.size}명, Agenda 매칭(이름) ${agendaOrderByName.size}명`);
+  console.log(`[수동 order 설정된 연사]`, SP.filter(s=>s.order!==undefined&&s.order!==null).map(s=>`${s.name}(${s.order})`));
+
   const sortedSP = [...SP].sort((a, b) => {
     // 1순위: 수동 order 값
     const aOrd = (a.order !== undefined && a.order !== null) ? a.order : null;
@@ -2611,15 +2645,19 @@ function pageSpeakers() {
     if (aOrd !== null && bOrd !== null) return aOrd - bOrd;
     if (aOrd !== null) return -1;
     if (bOrd !== null) return 1;
-    // 2순위: Agenda 등장 순
-    const aIdx = agendaOrderMap.get(normalizeSpName(a.name));
-    const bIdx = agendaOrderMap.get(normalizeSpName(b.name));
+    // 2순위: Agenda 등장 순 (ID 매칭 우선)
+    let aIdx = agendaOrderMap.get(a.id);
+    let bIdx = agendaOrderMap.get(b.id);
+    // ID 매칭 실패 시 이름 매칭
+    if (aIdx === undefined) aIdx = agendaOrderByName.get(normalizeSpName(a.name));
+    if (bIdx === undefined) bIdx = agendaOrderByName.get(normalizeSpName(b.name));
     if (aIdx !== undefined && bIdx !== undefined) return aIdx - bIdx;
     if (aIdx !== undefined) return -1;
     if (bIdx !== undefined) return 1;
     // 3순위: 이름순
     return (a.name || "").localeCompare(b.name || "");
   });
+  console.log(`[정렬 결과]`, sortedSP.slice(0,5).map((s,i)=>`${i+1}. ${s.name}`));
   sortedSP.forEach((s, idx) => {
     if (spEditId === s.id) {
       html += `<div class="sp-edit">
@@ -5116,6 +5154,66 @@ window.resetSpOrder = () => {
   if (!confirm("수동 순서를 모두 초기화하시겠습니까?\n(Agenda 등장 순서로 자동 정렬됩니다)")) return;
   SP.forEach(s => { delete s.order; });
   scheduleSave();
+  draw();
+};
+
+// Agenda 등장 순서로 강제 재정렬 (수동 order 모두 제거 + Agenda 기반 새 order 부여)
+window.resortByAgenda = () => {
+  if (!AGENDA_ROWS) {
+    AGENDA_ROWS = parseAgendaToRows(AGENDA_HTML);
+  }
+  // 1) ID 자동 바인딩 먼저
+  AGENDA_ROWS.forEach(r => {
+    if (r.type !== "row" || !r.speakers) return;
+    r.speakers.forEach(sp => {
+      if (!sp.spId && sp.name) {
+        const norm = normalizeSpName(sp.name);
+        const master = SP.find(s => normalizeSpName(s.name) === norm);
+        if (master) sp.spId = master.id;
+      }
+    });
+  });
+  AGENDA_HTML = rowsToAgendaHtml(AGENDA_ROWS);
+
+  // 2) Agenda 등장 순서대로 SP.order 부여
+  const seenIds = new Set();
+  const seenNames = new Set();
+  let orderIdx = 0;
+  // 먼저 모든 SP의 order 초기화
+  SP.forEach(s => { delete s.order; });
+
+  AGENDA_ROWS.forEach(r => {
+    if (r.type !== "row" || !r.speakers) return;
+    r.speakers.forEach(sp => {
+      // ID로 매칭
+      if (sp.spId && !seenIds.has(sp.spId)) {
+        const master = SP.find(s => s.id === sp.spId);
+        if (master) {
+          master.order = orderIdx++;
+          seenIds.add(sp.spId);
+        }
+      } else if (sp.name) {
+        // 이름으로 매칭
+        const norm = normalizeSpName(sp.name);
+        if (!seenNames.has(norm)) {
+          const master = SP.find(s => normalizeSpName(s.name) === norm);
+          if (master && master.order === undefined) {
+            master.order = orderIdx++;
+            seenNames.add(norm);
+            seenIds.add(master.id);
+          }
+        }
+      }
+    });
+  });
+
+  // 3) Agenda에 없는 연사들은 끝에 이름순으로
+  const remaining = SP.filter(s => s.order === undefined)
+                       .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  remaining.forEach(s => { s.order = orderIdx++; });
+
+  scheduleSave();
+  alert(`✅ Agenda 순서로 재정렬 완료\n• Agenda 매칭: ${seenIds.size}명\n• 나머지(이름순): ${remaining.length}명\n• 전체: ${SP.length}명`);
   draw();
 };
 
