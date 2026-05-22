@@ -1387,6 +1387,14 @@ function buildAgendaOrderMap() {
   const rows = AGENDA_ROWS || parseAgendaToRows(AGENDA_HTML);
   let idx = 0;
   rows.forEach(r => {
+    // 섹션 좌장도 포함 (예: "Jerome H. Kim, IVI Director")
+    if (r.type === "section" && r.chair) {
+      const chairs = parseChairNames(r.chair);
+      chairs.forEach(name => {
+        const key = normalizeSpName(name);
+        if (key && !map.has(key)) map.set(key, idx++);
+      });
+    }
     if (r.type === "row" && r.speakers && r.speakers.length > 0) {
       r.speakers.forEach(sp => {
         if (!sp.name) return;
@@ -1403,6 +1411,29 @@ function buildAgendaOrderMap() {
 // 이름 정규화 (대소문자/공백/구두점 제거)
 function normalizeSpName(s) {
   return (s || "").toLowerCase().replace(/[\s,.\-]/g, "").trim();
+}
+
+// 좌장 문자열에서 연사 이름들만 추출
+// 입력 예: "Jerome H. Kim, IVI Director General", "Hee Sun Kim (KAIST) & John Doe (MIT)"
+// 출력: ["Jerome H. Kim"], ["Hee Sun Kim", "John Doe"]
+function parseChairNames(chairStr) {
+  if (!chairStr) return [];
+  // & 또는 and 또는 / 로 여러 명 구분
+  const parts = chairStr.split(/\s+(?:&|and|\/)\s+/i);
+  const names = [];
+  parts.forEach(part => {
+    // 괄호 안 제거 (소속/직책)
+    let s = part.replace(/\([^)]*\)/g, "").trim();
+    // 첫 콤마 앞까지 (예: "Jerome H. Kim, IVI Director" → "Jerome H. Kim")
+    s = s.split(",")[0].trim();
+    // 양 끝 구분자 제거
+    s = s.replace(/^[·•∙\-\s]+|[·•∙\-\s]+$/g, "");
+    // 너무 짧거나 흔한 단어면 제외
+    if (s.length < 2) return;
+    if (/^(chair|chairperson|moderator|speaker|panelist|by|of|the|tbd|tba)$/i.test(s)) return;
+    names.push(s);
+  });
+  return names;
 }
 
 // ── Agenda HTML ↔ 데이터 변환 ──────────────────────────
@@ -5158,11 +5189,37 @@ window.resetSpOrder = () => {
 };
 
 // Agenda 등장 순서로 강제 재정렬 (수동 order 모두 제거 + Agenda 기반 새 order 부여)
+// 좌장(chair)도 포함하여 정렬, 중복 연사는 제거
 window.resortByAgenda = () => {
   if (!AGENDA_ROWS) {
     AGENDA_ROWS = parseAgendaToRows(AGENDA_HTML);
   }
-  // 1) ID 자동 바인딩 먼저
+
+  // 1) SP 중복 제거 (같은 이름이 여러 번 등록된 경우 첫 번째만 유지)
+  const seenNormNames = new Map(); // norm → first SP
+  const dedupedSP = [];
+  let removedDupes = 0;
+  SP.forEach(s => {
+    const norm = normalizeSpName(s.name);
+    if (!norm) return;
+    if (seenNormNames.has(norm)) {
+      // 중복: 정보가 더 풍부한 쪽을 유지
+      const existing = seenNormNames.get(norm);
+      if ((s.org && !existing.org) || (s.role && !existing.role)) {
+        if (!existing.org && s.org) existing.org = s.org;
+        if (!existing.role && s.role) existing.role = s.role;
+      }
+      // status는 confirmed 우선
+      if (s.status === "confirmed" && existing.status !== "confirmed") existing.status = "confirmed";
+      removedDupes++;
+      return;
+    }
+    seenNormNames.set(norm, s);
+    dedupedSP.push(s);
+  });
+  SP = dedupedSP;
+
+  // 2) ID 자동 바인딩 (Agenda 행 연사)
   AGENDA_ROWS.forEach(r => {
     if (r.type !== "row" || !r.speakers) return;
     r.speakers.forEach(sp => {
@@ -5173,47 +5230,85 @@ window.resortByAgenda = () => {
       }
     });
   });
-  AGENDA_HTML = rowsToAgendaHtml(AGENDA_ROWS);
 
-  // 2) Agenda 등장 순서대로 SP.order 부여
-  const seenIds = new Set();
-  const seenNames = new Set();
-  let orderIdx = 0;
-  // 먼저 모든 SP의 order 초기화
-  SP.forEach(s => { delete s.order; });
-
+  // 2-b) 섹션 좌장 중 LOP에 없는 사람은 자동 추가
+  let addedChairs = 0;
   AGENDA_ROWS.forEach(r => {
-    if (r.type !== "row" || !r.speakers) return;
-    r.speakers.forEach(sp => {
-      // ID로 매칭
-      if (sp.spId && !seenIds.has(sp.spId)) {
-        const master = SP.find(s => s.id === sp.spId);
-        if (master) {
-          master.order = orderIdx++;
-          seenIds.add(sp.spId);
-        }
-      } else if (sp.name) {
-        // 이름으로 매칭
-        const norm = normalizeSpName(sp.name);
-        if (!seenNames.has(norm)) {
-          const master = SP.find(s => normalizeSpName(s.name) === norm);
-          if (master && master.order === undefined) {
-            master.order = orderIdx++;
-            seenNames.add(norm);
-            seenIds.add(master.id);
-          }
-        }
+    if (r.type !== "section" || !r.chair) return;
+    const chairs = parseChairNames(r.chair);
+    chairs.forEach(chairName => {
+      const norm = normalizeSpName(chairName);
+      if (!norm) return;
+      const exists = SP.find(s => normalizeSpName(s.name) === norm);
+      if (!exists) {
+        // 좌장 소속 추출 시도: "Jerome H. Kim, IVI" → "IVI"
+        const orgMatch = r.chair.match(new RegExp(chairName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*,\\s*([^,&/()]+)", "i"));
+        const org = orgMatch ? orgMatch[1].trim() : "";
+        SP.push({
+          id: nextSpId(),
+          name: chairName,
+          org: org,
+          role: "좌장",
+          session: r.label || "",
+          status: "pending",
+          travel: "미정"
+        });
+        addedChairs++;
       }
     });
   });
 
-  // 3) Agenda에 없는 연사들은 끝에 이름순으로
+  AGENDA_HTML = rowsToAgendaHtml(AGENDA_ROWS);
+
+  // 3) Agenda 등장 순서대로 SP.order 부여 (좌장 + 연사)
+  const seenIds = new Set();
+  const seenNames = new Set();
+  let orderIdx = 0;
+  SP.forEach(s => { delete s.order; });
+
+  const tryAssign = (nameOrSp) => {
+    let master = null;
+    if (typeof nameOrSp === "object" && nameOrSp.spId) {
+      master = SP.find(s => s.id === nameOrSp.spId);
+    }
+    if (!master) {
+      const name = typeof nameOrSp === "object" ? nameOrSp.name : nameOrSp;
+      if (!name) return;
+      const norm = normalizeSpName(name);
+      if (seenNames.has(norm)) return;
+      master = SP.find(s => normalizeSpName(s.name) === norm);
+    }
+    if (master && master.order === undefined) {
+      master.order = orderIdx++;
+      seenIds.add(master.id);
+      seenNames.add(normalizeSpName(master.name));
+    }
+  };
+
+  AGENDA_ROWS.forEach(r => {
+    // 섹션 좌장 먼저 (해당 섹션 시작 시점에 등장)
+    if (r.type === "section" && r.chair) {
+      const chairs = parseChairNames(r.chair);
+      chairs.forEach(chairName => tryAssign(chairName));
+    }
+    // 그 다음 행의 연사들
+    if (r.type === "row" && r.speakers) {
+      r.speakers.forEach(sp => tryAssign(sp));
+    }
+  });
+
+  // 4) Agenda에 없는 연사들은 끝에 이름순으로
   const remaining = SP.filter(s => s.order === undefined)
                        .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
   remaining.forEach(s => { s.order = orderIdx++; });
 
   scheduleSave();
-  alert(`✅ Agenda 순서로 재정렬 완료\n• Agenda 매칭: ${seenIds.size}명\n• 나머지(이름순): ${remaining.length}명\n• 전체: ${SP.length}명`);
+  alert(`✅ Agenda 순서로 재정렬 완료\n` +
+        `• Agenda 매칭 (좌장 포함): ${seenIds.size}명\n` +
+        `• 나머지 (이름순): ${remaining.length}명\n` +
+        `• 좌장 자동 추가: ${addedChairs}명\n` +
+        `• 중복 제거: ${removedDupes}명\n` +
+        `• 전체: ${SP.length}명`);
   draw();
 };
 
