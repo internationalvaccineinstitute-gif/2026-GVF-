@@ -1699,6 +1699,16 @@ function pageAgenda() {
     scheduleSave();
   }
 
+  // 전체 연사 수 집계 (Agenda에 등장)
+  let totalAgSpeakers = 0;
+  AGENDA_ROWS.forEach(r => {
+    if (r.type === "row" && r.speakers) totalAgSpeakers += r.speakers.length;
+  });
+  const boundCount = totalAgSpeakers - orphans.length;
+
+  console.log(`[Agenda 정합성] 전체 연사: ${totalAgSpeakers}, LOP 매칭: ${boundCount}, 미등록: ${orphans.length}`);
+  if (orphans.length > 0) console.log("[미등록 연사]", orphans.map(o=>o.name));
+
   const updatedAt = AGENDA_META.updatedAt || "";
   const fileName  = AGENDA_META.fileName  || "기본 Agenda (05.07.2026)";
   const editMode = window._agEditMode || false;
@@ -1720,12 +1730,11 @@ function pageAgenda() {
     </label>
     <button onclick="resetAgenda()" style="padding:7px 14px;border-radius:20px;font-size:12px;font-weight:600;background:#F1F5F9;color:#64748b;border:1px solid #E2E8F0;cursor:pointer;">초기화</button>
     <button onclick="syncAgendaToSP(false)" style="padding:7px 14px;border-radius:20px;font-size:12px;font-weight:600;background:#DBEAFE;color:#1B4FA0;border:1px solid #BFDBFE;cursor:pointer;white-space:nowrap;" title="Agenda 연사를 참석자 관리에 추가/업데이트 (덮어쓰지 않음)">🔄 참석자 관리 동기화</button>
-    <button onclick="cleanupAgendaSpeakers()" style="padding:7px 14px;border-radius:20px;font-size:12px;font-weight:600;background:#FEF3C7;color:#92400e;border:1px solid #FDE68A;cursor:pointer;white-space:nowrap;" title="연사 표시 오류(태그 노출 등) 자동 정리">🧹 연사 표시 정리</button>
   </div>
   ${orphans.length > 0 ? `
   <div class="card" style="padding:12px 16px;margin-bottom:14px;background:linear-gradient(135deg,#FEF2F2,#FFFBEB);border-left:4px solid #f59e0b;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px;">
-      <div style="font-size:13px;font-weight:800;color:#92400e;">⚠️ LOP에 등록되지 않은 연사 ${orphans.length}명 발견</div>
+      <div style="font-size:13px;font-weight:800;color:#92400e;">⚠️ LOP에 등록되지 않은 연사 ${orphans.length}명 발견 <span style="font-weight:600;color:#64748b;font-size:11px;">(전체 ${totalAgSpeakers}명 중)</span></div>
       <button onclick="addAllOrphansToSp()" style="padding:5px 12px;border-radius:14px;font-size:11px;font-weight:700;background:#16a34a;color:#fff;border:none;cursor:pointer;">＋ 모두 LOP에 추가</button>
     </div>
     <div style="display:flex;flex-wrap:wrap;gap:6px;">
@@ -1737,7 +1746,14 @@ function pageAgenda() {
           <button onclick="addOrphanToSp('${o.rowId}', ${o.spIdx})" style="background:#16a34a;color:#fff;border:none;border-radius:4px;padding:2px 7px;cursor:pointer;font-size:10px;font-weight:700;">＋ 추가</button>
         </div>`).join("")}
     </div>
-  </div>` : ""}
+  </div>` : (totalAgSpeakers > 0 ? `
+  <div class="card" style="padding:10px 14px;margin-bottom:14px;background:linear-gradient(135deg,#F0FDF4,#ECFDF5);border-left:4px solid #16a34a;display:flex;align-items:center;gap:10px;">
+    <span style="font-size:18px;">✅</span>
+    <div style="flex:1;">
+      <div style="font-size:12px;font-weight:800;color:#15803d;">LOP 정합성 OK</div>
+      <div style="font-size:10px;color:#64748b;margin-top:1px;">Agenda 전체 ${totalAgSpeakers}명 연사가 모두 LOP에 등록·연동되어 있습니다.</div>
+    </div>
+  </div>` : "")}
   <div id="sync-result"></div>
   <div id="agenda-loading" style="display:none;text-align:center;padding:30px;color:#1B4FA0;font-weight:600;">⏳ Agenda 파일 분석 중...</div>
   <div class="card" style="padding:0;overflow:hidden;">
