@@ -1502,12 +1502,102 @@ function parseSpeakerHtml(html) {
 function speakersToHtml(speakers) {
   if (!speakers?.length) return "";
   return speakers.map(sp => {
-    const name = esc(sp.name);
-    if (!sp.sub) return `<strong>${name}</strong>`;
-    if (sp.sub.startsWith("(")) return `<strong>${name}</strong> ${esc(sp.sub)}`;
-    if (sp.sub.startsWith("–") || sp.sub.startsWith("-")) return `<strong>${name}</strong> ${esc(sp.sub)}`;
-    return `<strong>${name}</strong><br><em>${esc(sp.sub)}</em>`;
+    // ID 기반 연동: spId가 있으면 LOP에서 최신 정보 조회
+    const resolved = resolveSpeaker(sp);
+    const name = esc(resolved.name);
+    const statusBadge = resolved.statusBadge || "";
+    const orphanBadge = resolved.isOrphan ? `<span style="display:inline-block;font-size:9px;background:#FEF2F2;color:#dc2626;padding:1px 5px;border-radius:4px;margin-left:4px;font-weight:700;vertical-align:middle;" title="LOP에 등록되지 않은 연사">⚠️ 미등록</span>` : "";
+    const namePart = `<strong>${name}</strong>${statusBadge}${orphanBadge}`;
+    if (!resolved.sub) return namePart;
+    if (resolved.sub.startsWith("(")) return `${namePart} ${esc(resolved.sub)}`;
+    if (resolved.sub.startsWith("–") || resolved.sub.startsWith("-")) return `${namePart} ${esc(resolved.sub)}`;
+    return `${namePart}<br><em>${esc(resolved.sub)}</em>`;
   }).join("<br>");
+}
+
+// ── ID 기반 연사 조회 + 상태 배지 ────────────────────
+// 입력: Agenda 행의 speaker 객체 {spId?, name?, sub?}
+// 출력: {name, sub, status, isOrphan, statusBadge}
+function resolveSpeaker(sp) {
+  // 1) spId로 LOP에서 조회 (마스터)
+  if (sp.spId) {
+    const master = SP.find(s => s.id === sp.spId);
+    if (master) {
+      let statusBadge = "";
+      if (master.status === "pending") {
+        statusBadge = ` <span style="display:inline-block;font-size:9px;background:#FEF3C7;color:#92400e;padding:1px 5px;border-radius:4px;font-weight:700;vertical-align:middle;" title="연사 상태: 대기 중">⏳ 대기</span>`;
+      } else if (master.status === "cancelled") {
+        statusBadge = ` <span style="display:inline-block;font-size:9px;background:#FEE2E2;color:#991b1b;padding:1px 5px;border-radius:4px;font-weight:700;vertical-align:middle;" title="연사 상태: 취소됨">❌ 취소</span>`;
+      }
+      return {
+        name: master.name,
+        sub: master.org || sp.sub || "",
+        status: master.status,
+        isOrphan: false,
+        statusBadge
+      };
+    }
+    // spId가 있지만 LOP에 없음 → orphan
+    return {name: sp.name || "(삭제된 연사)", sub: sp.sub || "", isOrphan: true, statusBadge: ""};
+  }
+  // 2) spId 없음 — 이름으로 LOP에서 찾기 시도
+  if (sp.name) {
+    const norm = normalizeSpName(sp.name);
+    const master = SP.find(s => normalizeSpName(s.name) === norm);
+    if (master) {
+      // 자동 바인딩: 이름 매칭되면 spId 부여 (다음 저장 시 영구화)
+      sp.spId = master.id;
+      let statusBadge = "";
+      if (master.status === "pending") {
+        statusBadge = ` <span style="display:inline-block;font-size:9px;background:#FEF3C7;color:#92400e;padding:1px 5px;border-radius:4px;font-weight:700;vertical-align:middle;">⏳ 대기</span>`;
+      } else if (master.status === "cancelled") {
+        statusBadge = ` <span style="display:inline-block;font-size:9px;background:#FEE2E2;color:#991b1b;padding:1px 5px;border-radius:4px;font-weight:700;vertical-align:middle;">❌ 취소</span>`;
+      }
+      return {name: master.name, sub: master.org || sp.sub || "", status: master.status, isOrphan: false, statusBadge};
+    }
+    // 이름은 있지만 LOP에 없음 → 미등록 경고
+    return {name: sp.name, sub: sp.sub || "", isOrphan: true, statusBadge: ""};
+  }
+  return {name: "?", sub: "", isOrphan: false, statusBadge: ""};
+}
+
+// ── Agenda → LOP 역방향 동기화 ────────────────────────
+// SP[i]에 sessions 배열 추가: [{title, time, rowId}]
+function buildSpSessionMap() {
+  const sessionMap = new Map(); // spId → [{title, time, rowId}]
+  const rows = AGENDA_ROWS || parseAgendaToRows(AGENDA_HTML);
+  rows.forEach(r => {
+    if (r.type !== "row" || !r.speakers) return;
+    r.speakers.forEach(sp => {
+      if (!sp.spId) {
+        // 이름으로 자동 매칭 시도
+        if (sp.name) {
+          const norm = normalizeSpName(sp.name);
+          const master = SP.find(s => normalizeSpName(s.name) === norm);
+          if (master) sp.spId = master.id;
+        }
+      }
+      if (sp.spId) {
+        if (!sessionMap.has(sp.spId)) sessionMap.set(sp.spId, []);
+        sessionMap.get(sp.spId).push({
+          title: r.title || "",
+          time: r.time || "",
+          rowId: r.id,
+          rowType: r.rowType || "normal"
+        });
+      }
+    });
+  });
+  return sessionMap;
+}
+
+// 호출 시점: Agenda 변경 후 / LOP 페이지 그리기 전
+function refreshSpSessions() {
+  const sessionMap = buildSpSessionMap();
+  SP.forEach(s => {
+    const sessions = sessionMap.get(s.id) || [];
+    s.agendaSessions = sessions;  // [{title, time, rowId, rowType}]
+  });
 }
 
 function rowsToAgendaHtml(rows) {
@@ -1578,6 +1668,37 @@ function syncSpeakersFromAgenda() {
 
 function pageAgenda() {
   ensureAgendaRows();
+
+  // ── 정합성 체크: Agenda에 있지만 LOP에 없는 연사 찾기 ────
+  const orphans = []; // [{name, sub, rowId, rowTitle, spIdx}]
+  let autoBoundCount = 0;
+  AGENDA_ROWS.forEach(r => {
+    if (r.type !== "row" || !r.speakers) return;
+    r.speakers.forEach((sp, idx) => {
+      if (sp.spId) {
+        // spId가 있는데 LOP에서 삭제된 경우 → orphan
+        const master = SP.find(s => s.id === sp.spId);
+        if (!master) orphans.push({name: sp.name||"(삭제됨)", sub: sp.sub, rowId: r.id, rowTitle: r.title, spIdx: idx, reason: "삭제됨"});
+      } else if (sp.name) {
+        // 이름으로 LOP 검색
+        const norm = normalizeSpName(sp.name);
+        const master = SP.find(s => normalizeSpName(s.name) === norm);
+        if (master) {
+          // 자동 ID 바인딩
+          sp.spId = master.id;
+          autoBoundCount++;
+        } else {
+          orphans.push({name: sp.name, sub: sp.sub, rowId: r.id, rowTitle: r.title, spIdx: idx, reason: "미등록"});
+        }
+      }
+    });
+  });
+  if (autoBoundCount > 0) {
+    AGENDA_HTML = rowsToAgendaHtml(AGENDA_ROWS);
+    refreshSpSessions();
+    scheduleSave();
+  }
+
   const updatedAt = AGENDA_META.updatedAt || "";
   const fileName  = AGENDA_META.fileName  || "기본 Agenda (05.07.2026)";
   const editMode = window._agEditMode || false;
@@ -1601,6 +1722,22 @@ function pageAgenda() {
     <button onclick="syncAgendaToSP(false)" style="padding:7px 14px;border-radius:20px;font-size:12px;font-weight:600;background:#DBEAFE;color:#1B4FA0;border:1px solid #BFDBFE;cursor:pointer;white-space:nowrap;" title="Agenda 연사를 참석자 관리에 추가/업데이트 (덮어쓰지 않음)">🔄 참석자 관리 동기화</button>
     <button onclick="cleanupAgendaSpeakers()" style="padding:7px 14px;border-radius:20px;font-size:12px;font-weight:600;background:#FEF3C7;color:#92400e;border:1px solid #FDE68A;cursor:pointer;white-space:nowrap;" title="연사 표시 오류(태그 노출 등) 자동 정리">🧹 연사 표시 정리</button>
   </div>
+  ${orphans.length > 0 ? `
+  <div class="card" style="padding:12px 16px;margin-bottom:14px;background:linear-gradient(135deg,#FEF2F2,#FFFBEB);border-left:4px solid #f59e0b;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px;">
+      <div style="font-size:13px;font-weight:800;color:#92400e;">⚠️ LOP에 등록되지 않은 연사 ${orphans.length}명 발견</div>
+      <button onclick="addAllOrphansToSp()" style="padding:5px 12px;border-radius:14px;font-size:11px;font-weight:700;background:#16a34a;color:#fff;border:none;cursor:pointer;">＋ 모두 LOP에 추가</button>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;">
+      ${orphans.map(o => `
+        <div style="display:inline-flex;align-items:center;gap:6px;background:#fff;padding:5px 9px;border-radius:6px;border:1px solid #FDE68A;font-size:11px;">
+          <span style="font-weight:700;color:#0B1D3F;">${esc(o.name)}</span>
+          ${o.sub?`<span style="color:#94a3b8;">(${esc(o.sub.slice(0,30))})</span>`:""}
+          <span style="background:#FEF3C7;color:#92400e;padding:1px 5px;border-radius:4px;font-weight:700;">${o.reason}</span>
+          <button onclick="addOrphanToSp('${o.rowId}', ${o.spIdx})" style="background:#16a34a;color:#fff;border:none;border-radius:4px;padding:2px 7px;cursor:pointer;font-size:10px;font-weight:700;">＋ 추가</button>
+        </div>`).join("")}
+    </div>
+  </div>` : ""}
   <div id="sync-result"></div>
   <div id="agenda-loading" style="display:none;text-align:center;padding:30px;color:#1B4FA0;font-weight:600;">⏳ Agenda 파일 분석 중...</div>
   <div class="card" style="padding:0;overflow:hidden;">
@@ -1676,14 +1813,24 @@ function renderAgendaRows(editMode) {
               </select>
             </div>
           </div>
-          <label>연사 (${speakers.length}명)</label>
+          <label>연사 (${speakers.length}명) <span style="font-size:10px;color:#94a3b8;font-weight:400;">— LOP에 등록된 연사를 선택하거나 이름 직접 입력 (스마트 매칭)</span></label>
           <div id="ag-speaker-list">
-            ${speakers.map((sp,i)=>`
-            <div style="display:grid;grid-template-columns:1fr 1.3fr 30px;gap:6px;margin-bottom:5px;">
-              <input class="ag-sp-name" type="text" value="${esc(sp.name)}" placeholder="이름">
-              <input class="ag-sp-sub" type="text" value="${esc(sp.sub||"")}" placeholder="소속/직책 (예: Director, IVI)">
-              <button onclick="this.parentElement.remove()" style="background:#FEF2F2;color:#ef4444;border:1px solid #FECACA;border-radius:6px;cursor:pointer;font-size:13px;">✕</button>
-            </div>`).join("")}
+            ${speakers.map((sp,i)=>{
+              const master = sp.spId ? SP.find(s=>s.id===sp.spId) : null;
+              const isOrphan = sp.spId && !master;
+              return `
+            <div data-spid="${sp.spId||''}" style="display:grid;grid-template-columns:1fr 1.3fr 30px;gap:6px;margin-bottom:5px;align-items:center;">
+              <div style="position:relative;">
+                <select class="ag-sp-select" onchange="onAgSpeakerSelect(this, ${i})" style="width:100%;padding:6px 10px;border-radius:7px;border:1.5px solid ${isOrphan?'#fca5a5':'#BFDBFE'};font-size:13px;outline:none;background:#fff;">
+                  <option value="">— 직접 입력 / 선택 —</option>
+                  ${SP.map(s=>`<option value="${s.id}" ${sp.spId===s.id?'selected':''}>${esc(s.name)}${s.org?' ('+esc(s.org)+')':''}${s.status==='pending'?' ⏳':''}${s.status==='cancelled'?' ❌':''}</option>`).join("")}
+                </select>
+              </div>
+              <input class="ag-sp-name" type="text" value="${esc(sp.name||'')}" placeholder="이름 (LOP 미등록 시 직접 입력)" style="display:${sp.spId?'none':'block'};" data-original-name="${esc(sp.name||'')}">
+              <input class="ag-sp-sub" type="text" value="${esc(sp.sub||(master?master.org:'')||'')}" placeholder="소속/직책 (자동 채워짐)" ${sp.spId?'readonly':''} style="background:${sp.spId?'#F8FAFC':'#fff'};color:${sp.spId?'#64748b':'#0B1D3F'};">
+              <button onclick="this.parentElement.remove()" style="background:#FEF2F2;color:#ef4444;border:1px solid #FECACA;border-radius:6px;cursor:pointer;font-size:13px;height:32px;">✕</button>
+            </div>`;
+            }).join("")}
           </div>
           <button onclick="addSpeakerRow()" style="margin-top:5px;padding:4px 12px;border-radius:7px;border:1.5px dashed #BBF7D0;background:#F0FDF4;color:#16a34a;cursor:pointer;font-size:11px;font-weight:600;">＋ 연사 추가</button>
           <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:12px;">
@@ -1775,14 +1922,33 @@ window.saveAgendaRow = (id) => {
     row.title = document.getElementById("ag-edit-title")?.value.trim() || "";
     row.rowType = document.getElementById("ag-edit-rowtype")?.value || "normal";
     const speakerEls = document.querySelectorAll("#ag-speaker-list > div");
-    row.speakers = Array.from(speakerEls).map(div => ({
-      name: div.querySelector(".ag-sp-name")?.value.trim() || "",
-      sub:  div.querySelector(".ag-sp-sub")?.value.trim() || "",
-    })).filter(sp => sp.name);
+    row.speakers = Array.from(speakerEls).map(div => {
+      const selectEl = div.querySelector(".ag-sp-select");
+      const spId = selectEl ? selectEl.value : "";
+      const nameInput = div.querySelector(".ag-sp-name")?.value.trim() || "";
+      const subInput = div.querySelector(".ag-sp-sub")?.value.trim() || "";
+      if (spId) {
+        // LOP 마스터에 바인딩된 연사
+        const master = SP.find(s => String(s.id) === String(spId));
+        return {
+          spId: master ? master.id : null,
+          name: master ? master.name : nameInput,
+          sub: subInput || (master ? master.org : "")
+        };
+      }
+      // 자유 입력: 이름으로 자동 매칭 시도
+      if (nameInput) {
+        const norm = normalizeSpName(nameInput);
+        const master = SP.find(s => normalizeSpName(s.name) === norm);
+        if (master) return {spId: master.id, name: master.name, sub: subInput || master.org};
+        return {name: nameInput, sub: subInput};
+      }
+      return null;
+    }).filter(sp => sp && (sp.spId || sp.name));
   }
   AGENDA_HTML = rowsToAgendaHtml(AGENDA_ROWS);
   window._agEditingId = null;
-  syncAgendaToSP({silent: true});
+  refreshSpSessions(); // ⭐ Agenda → LOP 역동기화
   scheduleSave();
 };
 
@@ -1810,12 +1976,94 @@ window.addSpeakerRow = () => {
   const list = document.getElementById("ag-speaker-list");
   if (!list) return;
   const div = document.createElement("div");
-  div.style.cssText = "display:grid;grid-template-columns:1fr 1.3fr 30px;gap:6px;margin-bottom:5px;";
+  div.style.cssText = "display:grid;grid-template-columns:1fr 1.3fr 30px;gap:6px;margin-bottom:5px;align-items:center;";
+  const options = SP.map(s=>`<option value="${s.id}">${esc(s.name)}${s.org?' ('+esc(s.org)+')':''}${s.status==='pending'?' ⏳':''}${s.status==='cancelled'?' ❌':''}</option>`).join("");
   div.innerHTML = `
-    <input class="ag-sp-name" type="text" value="" placeholder="이름" style="padding:6px 10px;border-radius:7px;border:1.5px solid #BFDBFE;font-size:13px;outline:none;width:100%;">
-    <input class="ag-sp-sub" type="text" value="" placeholder="소속/직책" style="padding:6px 10px;border-radius:7px;border:1.5px solid #BFDBFE;font-size:13px;outline:none;width:100%;">
-    <button onclick="this.parentElement.remove()" style="background:#FEF2F2;color:#ef4444;border:1px solid #FECACA;border-radius:6px;cursor:pointer;font-size:13px;">✕</button>`;
+    <select class="ag-sp-select" onchange="onAgSpeakerSelect(this)" style="padding:6px 10px;border-radius:7px;border:1.5px solid #BFDBFE;font-size:13px;outline:none;background:#fff;">
+      <option value="">— 직접 입력 / 선택 —</option>${options}
+    </select>
+    <input class="ag-sp-name" type="text" value="" placeholder="이름 (LOP 미등록 시 직접 입력)" style="padding:6px 10px;border-radius:7px;border:1.5px solid #BFDBFE;font-size:13px;outline:none;width:100%;">
+    <input class="ag-sp-sub" type="text" value="" placeholder="소속/직책 (자동 채워짐)" style="padding:6px 10px;border-radius:7px;border:1.5px solid #BFDBFE;font-size:13px;outline:none;width:100%;">
+    <button onclick="this.parentElement.remove()" style="background:#FEF2F2;color:#ef4444;border:1px solid #FECACA;border-radius:6px;cursor:pointer;font-size:13px;height:32px;">✕</button>`;
   list.appendChild(div);
+};
+
+// ── 누락 연사 LOP 추가 (개별/일괄) ──────────────────
+window.addOrphanToSp = (rowId, spIdx) => {
+  const row = AGENDA_ROWS.find(r => r.id === rowId);
+  if (!row || !row.speakers || !row.speakers[spIdx]) return;
+  const sp = row.speakers[spIdx];
+  // 이미 같은 이름이 LOP에 있는지 재검사
+  const norm = normalizeSpName(sp.name);
+  let master = SP.find(s => normalizeSpName(s.name) === norm);
+  if (!master) {
+    master = {
+      id: nextSpId(),
+      name: sp.name,
+      org: sp.sub || "",
+      role: inferRole(row.title || "", sp.sub || ""),
+      session: row.title || "",
+      status: "pending",
+      travel: /국내|domestic|korean?/i.test(sp.sub||"") ? "국내" : "미정"
+    };
+    SP.push(master);
+  }
+  sp.spId = master.id;
+  AGENDA_HTML = rowsToAgendaHtml(AGENDA_ROWS);
+  refreshSpSessions();
+  scheduleSave();
+  draw();
+};
+
+window.addAllOrphansToSp = () => {
+  let added = 0;
+  AGENDA_ROWS.forEach(r => {
+    if (r.type !== "row" || !r.speakers) return;
+    r.speakers.forEach(sp => {
+      if (sp.spId) return;
+      if (!sp.name) return;
+      const norm = normalizeSpName(sp.name);
+      let master = SP.find(s => normalizeSpName(s.name) === norm);
+      if (!master) {
+        master = {
+          id: nextSpId(),
+          name: sp.name,
+          org: sp.sub || "",
+          role: inferRole(r.title || "", sp.sub || ""),
+          session: r.title || "",
+          status: "pending",
+          travel: /국내|domestic|korean?/i.test(sp.sub||"") ? "국내" : "미정"
+        };
+        SP.push(master);
+        added++;
+      }
+      sp.spId = master.id;
+    });
+  });
+  AGENDA_HTML = rowsToAgendaHtml(AGENDA_ROWS);
+  refreshSpSessions();
+  scheduleSave();
+  alert(`✅ ${added}명의 연사를 LOP에 추가했습니다.`);
+  draw();
+};
+
+// LOP 드롭다운 선택 시 이름/소속 자동 채움
+window.onAgSpeakerSelect = (selectEl) => {
+  const div = selectEl.closest("div[data-spid], #ag-speaker-list > div");
+  if (!div) return;
+  const spId = selectEl.value;
+  const nameInput = div.querySelector(".ag-sp-name");
+  const subInput = div.querySelector(".ag-sp-sub");
+  if (spId) {
+    const master = SP.find(s => String(s.id) === String(spId));
+    if (master) {
+      if (nameInput) { nameInput.value = master.name; nameInput.style.display = "none"; }
+      if (subInput) { subInput.value = master.org || ""; subInput.readOnly = true; subInput.style.background = "#F8FAFC"; subInput.style.color = "#64748b"; }
+    }
+  } else {
+    if (nameInput) { nameInput.style.display = "block"; nameInput.value = ""; nameInput.focus(); }
+    if (subInput) { subInput.readOnly = false; subInput.style.background = "#fff"; subInput.style.color = "#0B1D3F"; subInput.value = ""; }
+  }
 };
 
 // ── 연사 동기화 실행 ──────────────────────────────────
@@ -2241,7 +2489,20 @@ function pageChecklist() {
   return html;
 }
 
-function getAgendaSessions(name) {
+function getAgendaSessions(nameOrSp) {
+  // ID 기반 우선 - SP 객체를 받았으면 agendaSessions 반환
+  if (typeof nameOrSp === "object" && nameOrSp.agendaSessions) {
+    return nameOrSp.agendaSessions.map(s => ({time: s.time, prog: s.title}));
+  }
+  // SP 객체에 id가 있으면 그 ID로 매칭
+  const targetSp = (typeof nameOrSp === "object") ? nameOrSp : SP.find(s => s.name === nameOrSp);
+  if (targetSp) {
+    refreshSpSessions(); // 최신 데이터
+    const updated = SP.find(s => s.id === targetSp.id);
+    if (updated?.agendaSessions) return updated.agendaSessions.map(s => ({time: s.time, prog: s.title}));
+  }
+  // Fallback: 이름 문자열 기반 (기존 호환성)
+  const name = (typeof nameOrSp === "string") ? nameOrSp : (nameOrSp.name || "");
   const tmp = document.createElement("div");
   tmp.innerHTML = AGENDA_HTML;
   const rows = tmp.querySelectorAll(".ag-row:not(.special)");
@@ -2272,6 +2533,8 @@ function getRelatedChecklist(name) {
 }
 
 function pageSpeakers() {
+  // Agenda → LOP 역동기화 (세션 정보 자동 갱신)
+  refreshSpSessions();
   const tab = window._spTab || "speakers";
   const selectedId = window._spSelectedId || null;
   if(selectedId && tab === "speakers") {
@@ -2368,7 +2631,7 @@ function pageSpeakers() {
       </div>`;
     } else {
       const sColor = sCol[s.status]||"#94a3b8";
-      const agSessions = getAgendaSessions(s.name);
+      const agSessions = getAgendaSessions(s);
       const travelInfo = getTravelInfo(s.name);
       const relatedCL  = getRelatedChecklist(s.name);
       const spFiles    = getSpFiles(s.id);
@@ -2397,7 +2660,7 @@ function pageSpeakers() {
           <div style="font-size:11px;color:#64748b;margin-top:2px;">${esc(s.org)}</div>
           <div style="display:flex;gap:4px;margin-top:4px;flex-wrap:wrap;">
             <span style="font-size:11px;background:${sColor}18;color:${sColor};padding:1px 7px;border-radius:5px;font-weight:700;">${{confirmed:"확정",pending:"대기",cancelled:"취소"}[s.status]||"대기"}</span>
-            ${agSessions.length>0?`<span style="font-size:11px;background:#EFF6FF;color:#1B4FA0;padding:1px 7px;border-radius:5px;font-weight:600;">📋 ${agSessions.length}세션</span>`:""}
+            ${agSessions.length>0?`<span style="font-size:11px;background:#EFF6FF;color:#1B4FA0;padding:1px 7px;border-radius:5px;font-weight:600;" title="${agSessions.map(a=>esc(a.time)+' '+esc(a.prog)).join(' / ')}">📋 ${esc(agSessions[0].time)} ${esc(agSessions[0].prog.slice(0,18))}${agSessions[0].prog.length>18?'…':''}${agSessions.length>1?` +${agSessions.length-1}`:''}</span>`:""}
             ${travelInfo?`<span style="font-size:11px;background:${travelInfo.ok?"#F0FDF4":"#FEF3C7"};color:${travelInfo.ok?"#15803d":"#92400e"};padding:1px 7px;border-radius:5px;font-weight:600;">✈️ ${travelInfo.ok?"항공 확정":"항공 미확인"}</span>`:""}
             ${relatedCL.length>0?`<span style="font-size:11px;background:#F0FDF4;color:#15803d;padding:1px 7px;border-radius:5px;font-weight:600;">✅ ${relatedCL.filter(t=>t.done).length}/${relatedCL.length}</span>`:""}
             ${spFiles.length>0?`<span style="font-size:11px;background:#F5F3FF;color:#7c3aed;padding:1px 7px;border-radius:5px;font-weight:600;">📁 ${spFiles.length}개</span>`:""}
@@ -2414,7 +2677,7 @@ function pageSpProfile(s) {
   const sLbl = {confirmed:"확정",pending:"대기",cancelled:"취소"};
   const sCol = {confirmed:"#22c55e",pending:"#f59e0b",cancelled:"#ef4444"};
   const sColor = sCol[s.status]||"#94a3b8";
-  const agSessions  = getAgendaSessions(s.name);
+  const agSessions  = getAgendaSessions(s);
   const travelInfo  = getTravelInfo(s.name);
   const relatedCL   = getRelatedChecklist(s.name);
   const pendingCL   = relatedCL.filter(t=>!t.done);
@@ -4942,9 +5205,30 @@ window.setSpEditStatus = st => {
 };
 window.saveSpEdit = id => {
   SP=SP.map(s=>s.id===id?{...s,name:document.getElementById("sp-edit-name")?.value.trim()||s.name,org:document.getElementById("sp-edit-org")?.value.trim()||s.org,role:document.getElementById("sp-edit-role")?.value.trim()||s.role,session:document.getElementById("sp-edit-session")?.value.trim()||s.session,status:spEditStatus||s.status,travel:document.getElementById("sp-edit-travel")?.value.trim()||s.travel}:s);
+  // LOP → Agenda 순방향 동기화: Agenda HTML 재생성 (이름/소속 자동 반영)
+  if (AGENDA_ROWS) {
+    AGENDA_HTML = rowsToAgendaHtml(AGENDA_ROWS);
+  }
   spEditId=null; scheduleSave();
 };
-window.delSp = id => { if(confirm("이 연사를 삭제하시겠습니까?")){SP=SP.filter(s=>s.id!==id);spEditId=null;scheduleSave();} };
+window.delSp = id => {
+  if(confirm("이 연사를 삭제하시겠습니까?\nAgenda의 해당 연사 매칭도 자동으로 해제됩니다.")){
+    SP=SP.filter(s=>s.id!==id);
+    // Agenda에서 spId 참조도 해제 (이름/소속만 남김으로써 미등록 표시 됨)
+    if (AGENDA_ROWS) {
+      AGENDA_ROWS.forEach(r => {
+        if (r.type === "row" && r.speakers) {
+          r.speakers.forEach(sp => {
+            if (sp.spId === id) sp.spId = null;
+          });
+        }
+      });
+      AGENDA_HTML = rowsToAgendaHtml(AGENDA_ROWS);
+    }
+    spEditId=null;
+    scheduleSave();
+  }
+};
 window.doCSV = () => {
   const pm={high:"긴급",medium:"일반",low:"여유"},sm={confirmed:"확정",pending:"대기",cancelled:"취소"};
   const rows=[["체크리스트"],["카테고리","항목","완료","우선순위"],...CL.map(t=>[t.cat,`"${t.task.replace(/"/g,'""')}"`,t.done?"완료":"미완료",pm[t.pri]]),[],["연사명단"],["이름","소속","역할","세션","상태","항공"],...SP.map(s=>[s.name,s.org,s.role,s.session,sm[s.status]||s.status,s.travel])];
