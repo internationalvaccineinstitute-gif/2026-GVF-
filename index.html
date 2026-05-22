@@ -71,7 +71,7 @@ aside{width:240px;background:linear-gradient(175deg,#061220,#0B1D3F 55%,#0F2650)
 input,textarea{font-family:inherit;}
 input[type=text]{padding:6px 10px;border-radius:7px;border:1px solid #BFDBFE;font-size:13px;outline:none;width:100%;}
 input[type=text]:focus{border-color:#2563EB;}
-.sp-card{display:flex;align-items:center;gap:8px;padding:8px 11px;background:#fff;border-radius:9px;border:1px solid #F1F5F9;margin-bottom:5px;flex-wrap:wrap;box-shadow:0 1px 3px rgba(0,0,0,.04);font-size:12px;}
+.sp-card{display:flex;align-items:center;gap:6px;padding:6px 9px;background:#fff;border-radius:8px;border:1px solid #F1F5F9;margin-bottom:4px;flex-wrap:wrap;box-shadow:0 1px 3px rgba(0,0,0,.04);font-size:11px;}
 .sp-edit{background:#FAFCFF;border-radius:10px;border:2px solid #BFDBFE;padding:14px 16px;margin-bottom:8px;}
 .cat-hd{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#fff;border-radius:10px;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.06);border:1px solid rgba(0,0,0,.04);margin-bottom:5px;user-select:none;}
 .cat-hd:hover{box-shadow:0 2px 10px rgba(0,0,0,.08);}
@@ -103,6 +103,7 @@ aside.open{transform:translateX(0);}
 .card{padding:12px 14px;border-radius:10px;}
 .card-hd{font-size:14px;}
 .kpi-grid{grid-template-columns:1fr 1fr;gap:8px;}
+.budget-kpi-grid{grid-template-columns:1fr 1fr !important;gap:8px;}
 .g2{grid-template-columns:1fr;}
 .g3{grid-template-columns:1fr 1fr;gap:8px;}
 .hero{flex-direction:column;align-items:flex-start;gap:12px;padding:16px 18px;}
@@ -215,9 +216,11 @@ const DEFAULT_TRAVEL_DETAIL = [
   {id:"t4",name:"Yamamoto Norihisa",org:"JIHS, Japan",from:"Tokyo, JP",flight:419100,hotel:554000,trans:240000,misc:200000,ok:false},
   {id:"t5",name:"Kiat Ruxrungtham",org:"Chulalongkorn Univ.",from:"Bangkok, TH",flight:2378200,hotel:554000,trans:240000,misc:200000,ok:false},
 ];
-let BUDGET_ITEMS = DEFAULT_BUDGET_ITEMS.map(x=>({...x}));
+let BUDGET_ITEMS = DEFAULT_BUDGET_ITEMS.map(x=>({...x, paid: false})); // paid: 지급 완료 여부
 let TRAVEL_DETAIL = DEFAULT_TRAVEL_DETAIL.map(x=>({...x}));
 let BUDGET_ENTRIES = [];
+// 항공·숙박 마스터 토글: 각 카테고리 전체 지급 완료 여부
+let TRAVEL_PAID = { flight: false, hotel: false, trans: false, misc: false };
 
 const DEFAULT_CL = [
   {id:1,cat:"장소 준비",task:"Royal Hall (3F) 최종 계약 확인",done:true,pri:"high",deadline:"2026-04-30"},
@@ -343,6 +346,7 @@ let curPage = "home";
 let catOpen = Object.fromEntries(CATS.map(c=>[c,true]));
 let clEditId = null, spEditId = null;
 let clAddCat = null, spShowAdd = false;
+let spReorderMode = false; // 연사 순서 편집 모드
 let clAttachId = null;
 let saveTimer = null;
 let savedAt = null;
@@ -389,6 +393,7 @@ function initFirebase(cfg) {
       if (d.bi && Array.isArray(d.bi))  BUDGET_ITEMS  = d.bi;
       if (d.td && Array.isArray(d.td))  TRAVEL_DETAIL = d.td;
       if (d.be && Array.isArray(d.be))  BUDGET_ENTRIES= d.be;
+      if (d.tp && typeof d.tp === "object") TRAVEL_PAID = {...TRAVEL_PAID, ...d.tp};
       if (d.dt && typeof d.dt === "object") DAILY_TODOS = d.dt;
       if (d.sm && Array.isArray(d.sm))       SIDEBAR_MENU = d.sm;
       if (d.ms && Array.isArray(d.ms))       MILESTONES = d.ms;
@@ -427,6 +432,7 @@ async function saveToFirestore() {
       bi: BUDGET_ITEMS,
       td: TRAVEL_DETAIL,
       be: BUDGET_ENTRIES,
+      tp: TRAVEL_PAID,
       dt: DAILY_TODOS,
       sm: SIDEBAR_MENU,
       ms: MILESTONES,
@@ -1071,11 +1077,10 @@ function pageHome() {
   const catSt=CATS.map(cat=>{const it=CL.filter(t=>t.cat===cat),d=it.filter(t=>t.done).length;return{cat,d,t:it.length,p:pct(d,it.length)};});
 
   // ── 예산 동적 계산 (BUDGET_ITEMS + BUDGET_ENTRIES + TRAVEL_DETAIL) ─────
-  const homeTotalBudget = (BUDGET_ITEMS||[]).reduce((s,it)=>s+(Number(it.budget)||0),0);
-  const homeTotalEntries = (BUDGET_ENTRIES||[]).reduce((s,e)=>s+(Number(e.amount)||0),0);
-  const homeTotalTravel = (TRAVEL_DETAIL||[]).reduce((s,t)=>s+(Number(t.flight)||0)+(Number(t.hotel)||0)+(Number(t.trans)||0)+(Number(t.misc)||0),0);
-  const homeTotalActual = homeTotalEntries + homeTotalTravel;
-  const homeUsedPct = homeTotalBudget > 0 ? Math.round(homeTotalActual / homeTotalBudget * 100) : 0;
+  const HOME_BASE_BUDGET = 80000000; // 기준 총 예산 (고정)
+  const homeAllocatedBudget = (BUDGET_ITEMS||[]).reduce((s,it)=>s+(Number(it.budget)||0),0);
+  const homeTotalBudget = HOME_BASE_BUDGET; // 홈은 기준 예산 표시
+  const homeAllocPct = HOME_BASE_BUDGET > 0 ? Math.round(homeAllocatedBudget / HOME_BASE_BUDGET * 100) : 0;
 
   // ── 마일스톤 (전역 변수 MILESTONES 사용, 날짜로 상태 자동 결정) ─────
   const todayMs = today0.getTime();
@@ -1215,7 +1220,7 @@ function pageHome() {
     <div class="kpi"><div style="font-size:10px;color:#64748b;font-weight:700;margin-bottom:4px;">📈 전체 진행률</div><div style="font-size:26px;font-weight:800;color:#1B4FA0;">${ov}%</div>${pctBar(ov,5)}<div style="font-size:10px;color:#94a3b8;margin-top:3px;">${done}/${total}개 완료</div></div>
     <div class="kpi"><div style="font-size:10px;color:#64748b;font-weight:700;margin-bottom:4px;">👥 연사 확정</div><div style="font-size:26px;font-weight:800;color:#15803d;">${conf}<span style="font-size:13px;color:#94a3b8;font-weight:400;">/${SP.length}</span></div><div style="font-size:10px;color:#94a3b8;margin-top:10px;">대기 ${SP.filter(s=>s.status==="pending").length}명</div></div>
     <div class="kpi"><div style="font-size:10px;color:#64748b;font-weight:700;margin-bottom:4px;">🚨 긴급 미완료</div><div style="font-size:26px;font-weight:800;color:#dc2626;">${urg.length}<span style="font-size:13px;color:#94a3b8;font-weight:400;"> 건</span></div><div style="font-size:10px;color:#94a3b8;margin-top:10px;">즉시 처리 필요</div></div>
-    <div class="kpi"><div style="font-size:10px;color:#64748b;font-weight:700;margin-bottom:4px;">💰 총 예산</div><div style="font-size:17px;font-weight:800;color:#92400e;margin-top:4px;">${krw(homeTotalBudget)}</div><div style="font-size:10px;color:#94a3b8;margin-top:6px;">${BUDGET_ITEMS.length}개 항목</div></div>
+    <div class="kpi"><div style="font-size:10px;color:#64748b;font-weight:700;margin-bottom:4px;">💰 전체 예산</div><div style="font-size:17px;font-weight:800;color:#92400e;margin-top:4px;">${krw(homeTotalBudget)}</div><div style="font-size:10px;color:#94a3b8;margin-top:6px;">편성 ${homeAllocPct}% · ${BUDGET_ITEMS.length}개 항목</div></div>
   </div>
   <div class="g2">
     <div class="card"><div class="card-hd">📊 카테고리별 진행 현황</div>
@@ -1281,6 +1286,124 @@ const DEFAULT_AGENDA_HTML = `
 let AGENDA_HTML = DEFAULT_AGENDA_HTML;
 let AGENDA_META = {};
 let AGENDA_ROWS = null;  // 캐시: 편집 시 사용
+
+// ── Agenda → 참석자 관리 자동 동기화 ────────────────────
+// Agenda 안의 모든 연사를 추출해서 SP(참석자 리스트)에 누락된 사람을 자동 추가
+// 기존 연사 정보(상태, 국내/해외 등)는 그대로 유지
+function syncAgendaToSP(opts = {}) {
+  const {silent = false, removeOrphans = false} = opts;
+  // 1) Agenda에서 모든 연사 추출
+  const rows = AGENDA_ROWS || parseAgendaToRows(AGENDA_HTML);
+  const agendaSpeakers = []; // [{name, org, session, role}]
+  let currentSession = "";
+  rows.forEach(r => {
+    if (r.type === "header" && r.title) {
+      currentSession = r.title;
+    } else if (r.type === "row" && r.speakers && r.speakers.length > 0) {
+      r.speakers.forEach(sp => {
+        if (!sp.name || sp.name.length < 2) return;
+        // 시간 같은 게 이름으로 잡힌 경우 제외
+        if (/^\d{1,2}:\d{2}/.test(sp.name)) return;
+        // 흔한 직책 키워드만 있는 경우 제외
+        if (/^(Moderator|Speaker|Chair|Panelist|Welcome|Opening|Closing|TBD|TBA)$/i.test(sp.name.trim())) return;
+        agendaSpeakers.push({
+          name: sp.name.trim(),
+          org: (sp.sub || "").trim(),
+          session: currentSession || "",
+          role: inferRole(r.title || "", sp.sub || "")
+        });
+      });
+    }
+  });
+
+  // 2) 이름 정규화 함수 (대소문자/공백 무시 비교)
+  const normName = (s) => (s||"").toLowerCase().replace(/[\s,.\-]/g, "").trim();
+
+  // 3) SP와 매칭하면서 신규/업데이트 분류
+  let added = 0, updated = 0, removed = 0;
+  const agendaNames = new Set(agendaSpeakers.map(a => normName(a.name)));
+
+  agendaSpeakers.forEach(a => {
+    const existing = SP.find(s => normName(s.name) === normName(a.name));
+    if (existing) {
+      // 기존 연사 — 비어있는 필드만 채움 (상태/travel는 절대 덮지 않음)
+      let changed = false;
+      if (!existing.org && a.org) { existing.org = a.org; changed = true; }
+      if (!existing.session && a.session) { existing.session = a.session; changed = true; }
+      if (!existing.role && a.role) { existing.role = a.role; changed = true; }
+      if (changed) updated++;
+    } else {
+      // 신규 연사 추가
+      SP.push({
+        id: nextSpId(),
+        name: a.name,
+        org: a.org,
+        role: a.role,
+        session: a.session,
+        status: "pending",
+        travel: /국내|domestic|korean?/i.test(a.org) ? "국내" : "미정"
+      });
+      added++;
+    }
+  });
+
+  // 4) (옵션) Agenda에 없는 연사 제거
+  if (removeOrphans) {
+    const before = SP.length;
+    SP = SP.filter(s => agendaNames.has(normName(s.name)));
+    removed = before - SP.length;
+  }
+
+  scheduleSave();
+  if (!silent) {
+    let msg = `✅ 연사 동기화 완료\n\n`;
+    msg += `• Agenda 연사 총 ${agendaSpeakers.length}명\n`;
+    msg += `• 신규 추가: ${added}명\n`;
+    msg += `• 정보 보강: ${updated}명\n`;
+    if (removeOrphans) msg += `• 제거: ${removed}명\n`;
+    msg += `• 현재 SP 총 ${SP.length}명`;
+    alert(msg);
+  }
+  return {added, updated, removed, total: agendaSpeakers.length};
+}
+
+// 세션 타이틀과 sub 텍스트에서 역할 추론
+function inferRole(sessionTitle, sub) {
+  const lower = (sessionTitle + " " + sub).toLowerCase();
+  if (/keynote|기조/.test(lower)) return "기조강연";
+  if (/welcome|opening/.test(lower)) return "환영사";
+  if (/closing/.test(lower)) return "폐회사";
+  if (/moderator|chair|좌장/.test(lower)) return "좌장";
+  if (/panel/.test(lower)) return "패널";
+  return "연사";
+}
+
+window.syncAgendaToSP = (removeOrphans = false) => syncAgendaToSP({removeOrphans});
+
+// ── Agenda 등장 순서 맵 (참석자 정렬용) ───────────────
+// returns Map<normalizedName, agendaIndex>
+function buildAgendaOrderMap() {
+  const map = new Map();
+  const rows = AGENDA_ROWS || parseAgendaToRows(AGENDA_HTML);
+  let idx = 0;
+  rows.forEach(r => {
+    if (r.type === "row" && r.speakers && r.speakers.length > 0) {
+      r.speakers.forEach(sp => {
+        if (!sp.name) return;
+        const key = normalizeSpName(sp.name);
+        if (!map.has(key)) {
+          map.set(key, idx++);
+        }
+      });
+    }
+  });
+  return map;
+}
+
+// 이름 정규화 (대소문자/공백/구두점 제거)
+function normalizeSpName(s) {
+  return (s || "").toLowerCase().replace(/[\s,.\-]/g, "").trim();
+}
 
 // ── Agenda HTML ↔ 데이터 변환 ──────────────────────────
 function parseAgendaToRows(html) {
@@ -1475,6 +1598,7 @@ function pageAgenda() {
       <input type="file" accept=".docx" style="display:none;" onchange="updateAgenda(event)">
     </label>
     <button onclick="resetAgenda()" style="padding:7px 14px;border-radius:20px;font-size:12px;font-weight:600;background:#F1F5F9;color:#64748b;border:1px solid #E2E8F0;cursor:pointer;">초기화</button>
+    <button onclick="syncAgendaToSP(false)" style="padding:7px 14px;border-radius:20px;font-size:12px;font-weight:600;background:#DBEAFE;color:#1B4FA0;border:1px solid #BFDBFE;cursor:pointer;white-space:nowrap;" title="Agenda 연사를 참석자 관리에 추가/업데이트 (덮어쓰지 않음)">🔄 참석자 관리 동기화</button>
     <button onclick="cleanupAgendaSpeakers()" style="padding:7px 14px;border-radius:20px;font-size:12px;font-weight:600;background:#FEF3C7;color:#92400e;border:1px solid #FDE68A;cursor:pointer;white-space:nowrap;" title="연사 표시 오류(태그 노출 등) 자동 정리">🧹 연사 표시 정리</button>
   </div>
   <div id="sync-result"></div>
@@ -1598,8 +1722,16 @@ window.updateAgenda = function(event) {
       AGENDA_ROWS = parseAgendaToRows(AGENDA_HTML);
       const now = new Date().toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"});
       AGENDA_META = {updatedAt:now, fileName:file.name};
+      // 자동 동기화: Agenda → 참석자 관리
+      const syncResult = syncAgendaToSP({silent: true});
       await saveToFirestore();
       draw();
+      // 동기화 결과 안내
+      if (syncResult.added > 0 || syncResult.updated > 0) {
+        setTimeout(() => {
+          alert(`📥 Agenda 가져오기 완료\n\n참석자 관리 자동 동기화:\n• 신규 연사 추가: ${syncResult.added}명\n• 정보 보강: ${syncResult.updated}명`);
+        }, 200);
+      }
     } catch(err) {
       alert("파일 파싱 오류: " + err.message);
       if(loadEl) loadEl.style.display = "none";
@@ -1650,6 +1782,7 @@ window.saveAgendaRow = (id) => {
   }
   AGENDA_HTML = rowsToAgendaHtml(AGENDA_ROWS);
   window._agEditingId = null;
+  syncAgendaToSP({silent: true});
   scheduleSave();
 };
 
@@ -1657,6 +1790,7 @@ window.deleteAgendaRow = (id) => {
   if (!confirm("이 항목을 삭제하시겠습니까?")) return;
   AGENDA_ROWS = AGENDA_ROWS.filter(r => r.id !== id);
   AGENDA_HTML = rowsToAgendaHtml(AGENDA_ROWS);
+  syncAgendaToSP({silent: true});
   scheduleSave();
 };
 
@@ -2160,7 +2294,9 @@ function pageSpeakers() {
     ${[{l:"전체",v:SP.length,c:"#1B4FA0",bg:"#EFF6FF"},{l:"확정",v:conf,c:"#15803d",bg:"#dcfce7"},{l:"대기",v:pend,c:"#92400e",bg:"#fef3c7"}]
       .map(({l,v,c,bg})=>`<div style="background:${bg};border-radius:9px;padding:10px 16px;display:flex;align-items:center;gap:8px;box-shadow:0 1px 4px rgba(0,0,0,.06);"><span style="font-size:22px;font-weight:800;color:${c};">${v}</span><span style="font-size:12px;font-weight:600;color:${c};">${l}</span></div>`).join("")}
   </div>
-  <div style="display:flex;justify-content:flex-end;margin-bottom:12px;">
+  <div style="display:flex;justify-content:flex-end;margin-bottom:12px;gap:6px;">
+    <button class="btn btn-sm" style="background:${spReorderMode?'#1B4FA0':'#fff'};color:${spReorderMode?'#fff':'#1B4FA0'};border:1px solid #BFDBFE;" onclick="toggleSpReorder()">${spReorderMode?'✅ 순서 저장':'🔀 순서 편집'}</button>
+    ${spReorderMode?`<button class="btn btn-sm" style="background:#fff;color:#92400e;border:1px solid #FDE68A;" onclick="resetSpOrder()" title="수동 순서 초기화 (Agenda 순서로 복원)">🔄 초기화</button>`:''}
     <button class="btn btn-sm" style="background:#16a34a;color:#fff;border:none;" onclick="toggleSpAdd()">➕ 연사 추가</button>
   </div>`;
   if (spShowAdd) {
@@ -2187,7 +2323,25 @@ function pageSpeakers() {
       </div>
     </div>`;
   }
-  SP.forEach(s => {
+  // ── 정렬: 1) 수동 순서(order) → 2) Agenda 등장 순 → 3) 이름순 ─────
+  const agendaOrderMap = buildAgendaOrderMap();
+  const sortedSP = [...SP].sort((a, b) => {
+    // 1순위: 수동 order 값
+    const aOrd = (a.order !== undefined && a.order !== null) ? a.order : null;
+    const bOrd = (b.order !== undefined && b.order !== null) ? b.order : null;
+    if (aOrd !== null && bOrd !== null) return aOrd - bOrd;
+    if (aOrd !== null) return -1;
+    if (bOrd !== null) return 1;
+    // 2순위: Agenda 등장 순
+    const aIdx = agendaOrderMap.get(normalizeSpName(a.name));
+    const bIdx = agendaOrderMap.get(normalizeSpName(b.name));
+    if (aIdx !== undefined && bIdx !== undefined) return aIdx - bIdx;
+    if (aIdx !== undefined) return -1;
+    if (bIdx !== undefined) return 1;
+    // 3순위: 이름순
+    return (a.name || "").localeCompare(b.name || "");
+  });
+  sortedSP.forEach((s, idx) => {
     if (spEditId === s.id) {
       html += `<div class="sp-edit">
         <div style="font-size:13px;font-weight:700;color:#1B4FA0;margin-bottom:12px;">✏️ ${esc(s.name)} 정보 수정</div>
@@ -2218,20 +2372,38 @@ function pageSpeakers() {
       const travelInfo = getTravelInfo(s.name);
       const relatedCL  = getRelatedChecklist(s.name);
       const spFiles    = getSpFiles(s.id);
-      html += `<div onclick="window._spSelectedId=${s.id};window._spTab='speakers';draw()" style="display:flex;align-items:center;gap:10px;padding:11px 13px;background:#fff;border-radius:10px;border:1px solid #F1F5F9;margin-bottom:6px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.05);transition:all .15s;">
-        <div style="width:36px;height:36px;border-radius:10px;background:${sColor}33;border:2px solid ${sColor}44;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;">${s.status==="confirmed"?"✅":s.status==="cancelled"?"❌":"⏳"}</div>
+      const isLast = idx === sortedSP.length - 1;
+      const isFirst = idx === 0;
+      if (spReorderMode) {
+        // 순서 편집 모드: 드래그 핸들 + 위/아래 버튼만 표시 (클릭으로 프로필 이동 비활성화)
+        html += `<div draggable="true" ondragstart="spDragStart(event,${idx})" ondragover="event.preventDefault()" ondrop="spDrop(event,${idx})" style="display:flex;align-items:center;gap:8px;padding:9px 11px;background:#fff;border-radius:8px;border:2px dashed #BFDBFE;margin-bottom:5px;cursor:grab;box-shadow:0 1px 3px rgba(0,0,0,.05);">
+          <span style="font-size:18px;color:#94a3b8;cursor:grab;user-select:none;">⠿</span>
+          <div style="width:28px;height:28px;border-radius:7px;background:${sColor}33;border:2px solid ${sColor}44;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;">${s.status==="confirmed"?"✅":s.status==="cancelled"?"❌":"⏳"}</div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:11px;font-weight:700;color:#0B1D3F;">${idx+1}. ${esc(s.name)}</div>
+            <div style="font-size:11px;color:#64748b;margin-top:2px;">${esc(s.org)}</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:2px;">
+            <button onclick="moveSpUp(${idx})" ${isFirst?'disabled':''} style="background:${isFirst?'#F1F5F9':'#EFF6FF'};color:${isFirst?'#cbd5e1':'#1B4FA0'};border:1px solid #BFDBFE;border-radius:4px;width:24px;height:18px;cursor:${isFirst?'not-allowed':'pointer'};font-size:10px;padding:0;">▲</button>
+            <button onclick="moveSpDown(${idx})" ${isLast?'disabled':''} style="background:${isLast?'#F1F5F9':'#EFF6FF'};color:${isLast?'#cbd5e1':'#1B4FA0'};border:1px solid #BFDBFE;border-radius:4px;width:24px;height:18px;cursor:${isLast?'not-allowed':'pointer'};font-size:10px;padding:0;">▼</button>
+          </div>
+        </div>`;
+        return;
+      }
+      html += `<div onclick="window._spSelectedId=${s.id};window._spTab='speakers';draw()" style="display:flex;align-items:center;gap:8px;padding:9px 11px;background:#fff;border-radius:8px;border:1px solid #F1F5F9;margin-bottom:5px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.05);transition:all .15s;">
+        <div style="width:28px;height:28px;border-radius:7px;background:${sColor}33;border:2px solid ${sColor}44;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;">${s.status==="confirmed"?"✅":s.status==="cancelled"?"❌":"⏳"}</div>
         <div style="flex:1;min-width:0;">
-          <div style="font-size:13px;font-weight:700;color:#0B1D3F;">${esc(s.name)}</div>
-          <div style="font-size:11px;color:#64748b;margin-top:1px;">${esc(s.org)}</div>
-          <div style="display:flex;gap:5px;margin-top:4px;flex-wrap:wrap;">
-            <span style="font-size:9px;background:${sColor}18;color:${sColor};padding:1px 7px;border-radius:7px;font-weight:700;">${{confirmed:"확정",pending:"대기",cancelled:"취소"}[s.status]||"대기"}</span>
-            ${agSessions.length>0?`<span style="font-size:9px;background:#EFF6FF;color:#1B4FA0;padding:1px 7px;border-radius:7px;font-weight:600;">📋 ${agSessions.length}세션</span>`:""}
-            ${travelInfo?`<span style="font-size:9px;background:${travelInfo.ok?"#F0FDF4":"#FEF3C7"};color:${travelInfo.ok?"#15803d":"#92400e"};padding:1px 7px;border-radius:7px;font-weight:600;">✈️ ${travelInfo.ok?"항공 확정":"항공 미확인"}</span>`:""}
-            ${relatedCL.length>0?`<span style="font-size:9px;background:#F0FDF4;color:#15803d;padding:1px 7px;border-radius:7px;font-weight:600;">✅ ${relatedCL.filter(t=>t.done).length}/${relatedCL.length}</span>`:""}
-            ${spFiles.length>0?`<span style="font-size:9px;background:#F5F3FF;color:#7c3aed;padding:1px 7px;border-radius:7px;font-weight:600;">📁 ${spFiles.length}개</span>`:""}
+          <div style="font-size:11px;font-weight:700;color:#0B1D3F;">${esc(s.name)}</div>
+          <div style="font-size:11px;color:#64748b;margin-top:2px;">${esc(s.org)}</div>
+          <div style="display:flex;gap:4px;margin-top:4px;flex-wrap:wrap;">
+            <span style="font-size:11px;background:${sColor}18;color:${sColor};padding:1px 7px;border-radius:5px;font-weight:700;">${{confirmed:"확정",pending:"대기",cancelled:"취소"}[s.status]||"대기"}</span>
+            ${agSessions.length>0?`<span style="font-size:11px;background:#EFF6FF;color:#1B4FA0;padding:1px 7px;border-radius:5px;font-weight:600;">📋 ${agSessions.length}세션</span>`:""}
+            ${travelInfo?`<span style="font-size:11px;background:${travelInfo.ok?"#F0FDF4":"#FEF3C7"};color:${travelInfo.ok?"#15803d":"#92400e"};padding:1px 7px;border-radius:5px;font-weight:600;">✈️ ${travelInfo.ok?"항공 확정":"항공 미확인"}</span>`:""}
+            ${relatedCL.length>0?`<span style="font-size:11px;background:#F0FDF4;color:#15803d;padding:1px 7px;border-radius:5px;font-weight:600;">✅ ${relatedCL.filter(t=>t.done).length}/${relatedCL.length}</span>`:""}
+            ${spFiles.length>0?`<span style="font-size:11px;background:#F5F3FF;color:#7c3aed;padding:1px 7px;border-radius:5px;font-weight:600;">📁 ${spFiles.length}개</span>`:""}
           </div>
         </div>
-        <span style="font-size:14px;color:#94a3b8;">›</span>
+        <span style="font-size:13px;color:#94a3b8;">›</span>
       </div>`;
     }
   });
@@ -2385,14 +2557,38 @@ window.uploadSpFile = (spId, cat, event) => {
 };
 
 function pageBudget() {
-  const travelTotal = TRAVEL_DETAIL.reduce((s,t)=>s+(t.flight+t.hotel+t.trans+t.misc),0);
-  const actualByItem = {};
-  BUDGET_ENTRIES.forEach(e => { actualByItem[e.budgetId] = (actualByItem[e.budgetId]||0) + e.amount; });
-  const items = BUDGET_ITEMS.map(i => ({...i, actual: i.id==="b1" ? travelTotal : (actualByItem[i.id]||0)}));
-  const totalBudget = items.reduce((s,i)=>s+i.budget,0);
+  // ── 새 예산 로직 (기획안 기준) ───────────────────────
+  // 1) 기준 총 예산: 80,000,000원 고정
+  // 2) 편성 예산: BUDGET_ITEMS 합계
+  // 3) 잔여 예산: 기준 총 예산 - 편성 예산
+  // 4) 실지출: 지급 완료(paid)된 항목만 누적
+  //    - 항공·숙박: TRAVEL_PAID의 4개 카테고리(flight/hotel/trans/misc) 별 토글 ON 시 누적
+  //    - 그 외: BUDGET_ITEMS[i].paid === true 이면 해당 항목의 budget 전체를 실지출로 간주
+  const BASE_BUDGET = 80000000;
+  // 항공·숙박: 카테고리별 합계
+  const travelByCat = {
+    flight: TRAVEL_DETAIL.reduce((s,t)=>s+(Number(t.flight)||0),0),
+    hotel:  TRAVEL_DETAIL.reduce((s,t)=>s+(Number(t.hotel)||0),0),
+    trans:  TRAVEL_DETAIL.reduce((s,t)=>s+(Number(t.trans)||0),0),
+    misc:   TRAVEL_DETAIL.reduce((s,t)=>s+(Number(t.misc)||0),0),
+  };
+  const travelTotal = travelByCat.flight + travelByCat.hotel + travelByCat.trans + travelByCat.misc;
+  // 항공·숙박 실지출 = 토글 ON 카테고리 합
+  const travelPaidTotal = (TRAVEL_PAID.flight?travelByCat.flight:0)
+                        + (TRAVEL_PAID.hotel?travelByCat.hotel:0)
+                        + (TRAVEL_PAID.trans?travelByCat.trans:0)
+                        + (TRAVEL_PAID.misc?travelByCat.misc:0);
+  // 항목별 실지출 (paid=true 인 항목의 budget만 누적, b1은 travelPaidTotal 사용)
+  const items = BUDGET_ITEMS.map(i => ({
+    ...i,
+    actual: i.id==="b1" ? travelPaidTotal : (i.paid ? i.budget : 0)
+  }));
+  const allocatedBudget = items.reduce((s,i)=>s+i.budget,0);
   const totalActual = items.reduce((s,i)=>s+i.actual,0);
-  const remaining   = totalBudget - totalActual;
-  const usedPct     = totalBudget>0?Math.min(100,Math.round((totalActual/totalBudget)*100)):0;
+  const remainingByAllocation = BASE_BUDGET - allocatedBudget;
+  const remainingByActual = BASE_BUDGET - totalActual;
+  const allocPct = BASE_BUDGET>0?Math.min(100,Math.round((allocatedBudget/BASE_BUDGET)*100)):0;
+  const actualPct = BASE_BUDGET>0?Math.min(100,Math.round((totalActual/BASE_BUDGET)*100)):0;
   const trvEditId    = window._travelEditId||null;
   const budgetEditId = window._budgetEditId||null;
   const openBlocks   = window._budgetOpenBlocks||(window._budgetOpenBlocks={});
@@ -2418,20 +2614,27 @@ function pageBudget() {
     </button>
   </div>
   <div id="budget-import-status"></div>
-  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;">
-    ${[{l:"총 예산",v:krw(totalBudget),c:"#1B4FA0"},{l:"실지출 합계",v:krw(totalActual),c:totalActual>totalBudget?"#ef4444":"#0d9488"},{l:"잔여 예산",v:krw(remaining),c:remaining<0?"#ef4444":"#16a34a"},{l:"집행률",v:usedPct+"%",c:usedPct>90?"#ef4444":usedPct>70?"#f59e0b":"#1B4FA0"}]
-      .map(({l,v,c})=>`<div class="kpi"><div style="font-size:11px;color:#64748b;font-weight:700;margin-bottom:5px;">${l}</div><div style="font-size:20px;font-weight:800;color:${c};">${v}</div></div>`).join("")}
+  <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:16px;" class="budget-kpi-grid">
+    ${[
+      {l:"전체 예산", v:krw(BASE_BUDGET), c:"#1B4FA0", sub:"기준 총 예산 (고정)"},
+      {l:"편성 예산", v:krw(allocatedBudget), c:allocatedBudget>BASE_BUDGET?"#ef4444":"#0d9488", sub:`전체의 ${allocPct}% 편성`},
+      {l:"미편성 잔액", v:krw(remainingByAllocation), c:remainingByAllocation<0?"#ef4444":"#16a34a", sub:"전체 − 편성"},
+      {l:"실지출 합계", v:krw(totalActual), c:totalActual>BASE_BUDGET?"#ef4444":"#7c3aed", sub:`지급완료 ${actualPct}%`},
+      {l:"잔여 예산", v:krw(remainingByActual), c:remainingByActual<0?"#ef4444":"#92400e", sub:"전체 − 실지출"}
+    ].map(({l,v,c,sub})=>`<div class="kpi"><div style="font-size:11px;color:#64748b;font-weight:700;margin-bottom:5px;">${l}</div><div style="font-size:19px;font-weight:800;color:${c};">${v}</div><div style="font-size:9px;color:#94a3b8;margin-top:3px;">${sub}</div></div>`).join("")}
   </div>
   <div class="card" style="padding:12px 16px;margin-bottom:16px;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-      <span style="font-size:12px;font-weight:700;color:#475569;">전체 집행률</span>
+      <span style="font-size:12px;font-weight:700;color:#475569;">전체 예산 편성 현황 <span style="font-weight:400;color:#94a3b8;">(${allocPct}%)</span></span>
       <button onclick="addBudgetItem()" style="padding:4px 13px;border-radius:12px;font-size:12px;font-weight:700;background:linear-gradient(135deg,#1B4FA0,#2563EB);color:#fff;border:none;cursor:pointer;">＋ 항목 추가</button>
     </div>
-    <div style="display:flex;height:28px;border-radius:8px;overflow:hidden;gap:2px;">
-      ${items.map(item=>{const share=totalBudget>0?Math.round((item.budget/totalBudget)*100):0;return `<div title="${item.label}: ${krw(item.budget)}" style="flex:${share};background:${item.color};display:flex;align-items:center;justify-content:center;">${share>10?`<span style="font-size:10px;font-weight:700;color:#fff;white-space:nowrap;">${item.label}</span>`:""}</div>`;}).join("")}
+    <div style="display:flex;height:28px;border-radius:8px;overflow:hidden;gap:2px;background:#F1F5F9;">
+      ${items.map(item=>{const share=BASE_BUDGET>0?Math.round((item.budget/BASE_BUDGET)*100):0;return `<div title="${item.label}: ${krw(item.budget)} (${share}%)" style="flex:${item.budget};background:${item.color};display:flex;align-items:center;justify-content:center;">${share>8?`<span style="font-size:10px;font-weight:700;color:#fff;white-space:nowrap;">${item.label}</span>`:""}</div>`;}).join("")}
+      ${remainingByAllocation>0?`<div title="미편성 잔액: ${krw(remainingByAllocation)}" style="flex:${remainingByAllocation};background:#E2E8F0;display:flex;align-items:center;justify-content:center;"><span style="font-size:10px;font-weight:700;color:#94a3b8;white-space:nowrap;">미편성</span></div>`:""}
     </div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;">
       ${items.map(item=>`<div style="display:flex;align-items:center;gap:4px;"><div style="width:8px;height:8px;border-radius:50%;background:${item.color};"></div><span style="font-size:11px;color:#475569;">${esc(item.label)}</span><span style="font-size:11px;color:#94a3b8;">${krw(item.budget)}</span></div>`).join("")}
+      ${remainingByAllocation>0?`<div style="display:flex;align-items:center;gap:4px;"><div style="width:8px;height:8px;border-radius:50%;background:#E2E8F0;"></div><span style="font-size:11px;color:#475569;">미편성</span><span style="font-size:11px;color:#94a3b8;">${krw(remainingByAllocation)}</span></div>`:""}
     </div>
   </div>`;
 
@@ -2467,18 +2670,28 @@ function pageBudget() {
             <div style="width:10px;height:10px;border-radius:50%;background:${item.color};"></div>
             <span style="font-size:14px;font-weight:700;color:#0B1D3F;">${esc(item.label)}</span>
             ${isTravel?`<span style="font-size:10px;background:#EFF6FF;color:#1B4FA0;padding:2px 7px;border-radius:6px;font-weight:700;">연사 ${TRAVEL_DETAIL.length}명</span>`:""}
+            ${!isTravel && item.paid?`<span style="font-size:10px;background:#dcfce7;color:#15803d;padding:2px 7px;border-radius:6px;font-weight:700;">✓ 지급완료</span>`:""}
+            ${!isTravel && !item.paid?`<span style="font-size:10px;background:#FEF3C7;color:#92400e;padding:2px 7px;border-radius:6px;font-weight:700;">⏳ 미지급</span>`:""}
           </div>
-          <div style="height:8px;background:#F1F5F9;border-radius:99px;overflow:hidden;margin-bottom:4px;">
-            <div style="height:100%;width:${p}%;background:${over?"linear-gradient(90deg,#f87171,#ef4444)":item.color};border-radius:99px;"></div>
+          <div style="height:6px;background:#F1F5F9;border-radius:99px;overflow:hidden;margin-bottom:6px;">
+            <div style="height:100%;width:${BASE_BUDGET>0?Math.round((item.budget/BASE_BUDGET)*100):0}%;background:${item.color};border-radius:99px;"></div>
           </div>
-          <div style="display:flex;gap:12px;font-size:11px;flex-wrap:wrap;">
-            <span style="color:#94a3b8;">예산 <strong style="color:#475569;">${krw(item.budget)}</strong></span>
-            <span style="color:#94a3b8;">실지출 <strong style="color:${over?"#ef4444":"#0d9488"};">${krw(item.actual)}</strong></span>
-            <span style="color:#94a3b8;">잔여 <strong style="color:${over?"#ef4444":"#16a34a"};">${krw(item.budget-item.actual)}</strong></span>
-            <span style="font-weight:700;color:${over?"#ef4444":"#1B4FA0"};">${p}%</span>
+          <div style="display:flex;gap:12px;font-size:11px;flex-wrap:wrap;align-items:center;">
+            <span style="color:#94a3b8;">편성 예산</span>
+            <strong style="color:#0B1D3F;font-size:13px;">${krw(item.budget)}</strong>
+            <span style="font-size:10px;color:#94a3b8;">전체의 ${BASE_BUDGET>0?Math.round((item.budget/BASE_BUDGET)*100):0}%</span>
+            ${!isTravel && item.paid?`<span style="color:#94a3b8;">·</span><span style="color:#15803d;font-weight:700;">실지출 ${krw(item.budget)}</span>`:""}
           </div>
         </div>
-        <div style="display:flex;align-items:center;gap:4px;flex-shrink:0;" onclick="event.stopPropagation();">
+        <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;" onclick="event.stopPropagation();">
+          ${!isTravel?`<label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;padding:4px 9px;background:${item.paid?'#dcfce7':'#F1F5F9'};border-radius:14px;border:1px solid ${item.paid?'#86efac':'#E2E8F0'};" title="지급 상태 토글">
+            <span style="position:relative;display:inline-block;width:26px;height:14px;">
+              <input type="checkbox" ${item.paid?'checked':''} onchange="toggleItemPaid('${item.id}')" style="opacity:0;width:0;height:0;">
+              <span style="position:absolute;top:0;left:0;right:0;bottom:0;background:${item.paid?'#16a34a':'#cbd5e1'};border-radius:14px;transition:.2s;"></span>
+              <span style="position:absolute;top:2px;left:${item.paid?'14px':'2px'};width:10px;height:10px;background:#fff;border-radius:50%;transition:.2s;"></span>
+            </span>
+            <span style="font-size:10px;font-weight:700;color:${item.paid?'#15803d':'#64748b'};">${item.paid?'완료':'미지급'}</span>
+          </label>`:''}
           <button onclick="editBudgetItem('${item.id}')" style="background:none;border:none;cursor:pointer;font-size:14px;color:#94a3b8;padding:4px;" title="항목 편집">✏️</button>
           <button onclick="toggleBudgetItemAttach('${item.id}')" style="background:none;border:none;cursor:pointer;font-size:14px;padding:4px;color:${(item.attachments||[]).length>0?'#0d9488':'#94a3b8'};" title="파일 첨부">📎${(item.attachments||[]).length>0?`<sup style="font-size:10px;font-weight:700;color:#0d9488;">${(item.attachments||[]).length}</sup>`:""}</button>
           <button onclick="deleteBudgetItem('${item.id}')" style="background:none;border:none;cursor:pointer;font-size:14px;color:#fca5a5;padding:4px;" title="항목 삭제">🗑</button>
@@ -2499,6 +2712,41 @@ function pageBudget() {
       ${isOpen?`
       <div style="padding:0 16px 14px;border-top:1px solid #F1F5F9;">
         ${isTravel?`
+        <!-- 마스터 지급 상태 토글 (요약) -->
+        <div style="background:linear-gradient(135deg,#FAFCFF,#EFF6FF);border:1px solid #BFDBFE;border-radius:10px;padding:12px 14px;margin:12px 0 10px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+            <div style="font-size:12px;font-weight:800;color:#1B4FA0;">💳 항목별 지급 상태 (마스터 토글)</div>
+            <div style="font-size:10px;color:#64748b;">켜진 항목만 <strong>상단 실지출 합계</strong>에 누적</div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;">
+            ${[
+              {k:"flight", l:"✈️ 항공료", v:travelByCat.flight, on:TRAVEL_PAID.flight},
+              {k:"hotel",  l:"🏨 호텔비", v:travelByCat.hotel,  on:TRAVEL_PAID.hotel},
+              {k:"trans",  l:"🚗 교통비", v:travelByCat.trans,  on:TRAVEL_PAID.trans},
+              {k:"misc",   l:"📎 기타",   v:travelByCat.misc,   on:TRAVEL_PAID.misc},
+            ].map(({k,l,v,on})=>`
+              <label style="display:flex;align-items:center;gap:8px;background:#fff;padding:9px 11px;border-radius:8px;border:2px solid ${on?'#86efac':'#E2E8F0'};cursor:pointer;transition:all .15s;box-shadow:${on?'0 1px 4px rgba(22,163,74,0.15)':'none'};">
+                <span style="position:relative;display:inline-block;width:32px;height:18px;flex-shrink:0;">
+                  <input type="checkbox" ${on?'checked':''} onchange="toggleTravelPaid('${k}')" style="opacity:0;width:0;height:0;">
+                  <span style="position:absolute;top:0;left:0;right:0;bottom:0;background:${on?'#16a34a':'#cbd5e1'};border-radius:18px;transition:.2s;"></span>
+                  <span style="position:absolute;top:2px;left:${on?'16px':'2px'};width:14px;height:14px;background:#fff;border-radius:50%;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.2);"></span>
+                </span>
+                <div style="flex:1;min-width:0;">
+                  <div style="font-size:11px;font-weight:700;color:#0B1D3F;">${l}</div>
+                  <div style="font-size:11px;font-weight:800;color:${on?'#15803d':'#94a3b8'};margin-top:1px;">${krw(v)}</div>
+                </div>
+                <span style="font-size:10px;font-weight:700;color:${on?'#15803d':'#92400e'};background:${on?'#dcfce7':'#FEF3C7'};padding:2px 7px;border-radius:8px;flex-shrink:0;">${on?'✓ 완료':'⏳ 미지급'}</span>
+              </label>
+            `).join("")}
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding-top:10px;border-top:1px dashed #BFDBFE;">
+            <span style="font-size:11px;color:#64748b;">📊 항공·숙박 카테고리 소계</span>
+            <div style="display:flex;gap:14px;align-items:center;">
+              <span style="font-size:11px;color:#64748b;">총 편성 <strong style="color:#0B1D3F;">${krw(travelTotal)}</strong></span>
+              <span style="font-size:13px;font-weight:800;color:#15803d;">실지출 ${krw(travelPaidTotal)}</span>
+            </div>
+          </div>
+        </div>
         <div style="display:flex;justify-content:space-between;align-items:center;margin:10px 0 8px;gap:8px;flex-wrap:wrap;">
           <button onclick="restoreDefaultTravelers()" style="padding:5px 12px;border-radius:14px;font-size:11px;font-weight:600;background:#FAFCFF;color:#1B4FA0;border:1px solid #BFDBFE;cursor:pointer;">🔄 기본 연사 5명 복구</button>
           <button onclick="addTravelRow()" style="padding:5px 14px;border-radius:14px;font-size:12px;font-weight:700;background:linear-gradient(135deg,#1B4FA0,#2563EB);color:#fff;border:none;cursor:pointer;">＋ 연사 추가</button>
@@ -3175,6 +3423,20 @@ window.attachToItem = (id, event) => {
 window.downloadAttach = aid => { const data=localStorage.getItem("gvf2026_fa_"+aid);if(!data)return alert("파일을 찾을 수 없습니다.");let name="파일";CL.forEach(t=>(t.attachments||[]).forEach(a=>{if(a.id===aid)name=a.name;}));const a=document.createElement("a");a.href=data;a.download=name;a.click(); };
 window.removeAttach = (id,aid) => { localStorage.removeItem("gvf2026_fa_"+aid);CL=CL.map(t=>t.id===id?{...t,attachments:(t.attachments||[]).filter(a=>a.id!==aid)}:t);scheduleSave();clAttachId=id;draw(); };
 window.editBudgetItem = id => { window._budgetEditId=id; window._travelEditId=null; draw(); };
+
+// 일반 예산 항목 지급 상태 토글
+window.toggleItemPaid = (id) => {
+  BUDGET_ITEMS = BUDGET_ITEMS.map(i => i.id === id ? {...i, paid: !i.paid} : i);
+  scheduleSave();
+  draw();
+};
+
+// 항공·숙박 마스터 토글 (flight/hotel/trans/misc 별)
+window.toggleTravelPaid = (key) => {
+  TRAVEL_PAID = {...TRAVEL_PAID, [key]: !TRAVEL_PAID[key]};
+  scheduleSave();
+  draw();
+};
 window.saveBudgetItem = id => {
   const label=document.getElementById("be-label")?.value.trim();
   const budget=parseInt(document.getElementById("be-budget")?.value)||0;
@@ -4555,6 +4817,111 @@ window.addCl = cat => {
 
 let addSpStatus="pending", spEditStatus=null;
 window.toggleSpAdd = () => { spShowAdd=!spShowAdd; spEditId=null; draw(); };
+
+// ── 연사 순서 편집 핸들러 ─────────────────────────
+window.toggleSpReorder = () => {
+  if (spReorderMode) {
+    // 저장 모드: 현재 정렬 순서를 SP에 order 값으로 고정
+    spReorderMode = false;
+    scheduleSave();
+    draw();
+  } else {
+    spReorderMode = true;
+    spEditId = null;
+    spShowAdd = false;
+    draw();
+  }
+};
+
+window.resetSpOrder = () => {
+  if (!confirm("수동 순서를 모두 초기화하시겠습니까?\n(Agenda 등장 순서로 자동 정렬됩니다)")) return;
+  SP.forEach(s => { delete s.order; });
+  scheduleSave();
+  draw();
+};
+
+// 현재 화면 정렬을 SP에 order로 반영하는 헬퍼
+function commitSpOrder(orderedSpIds) {
+  orderedSpIds.forEach((id, i) => {
+    const sp = SP.find(s => s.id === id);
+    if (sp) sp.order = i;
+  });
+  scheduleSave();
+}
+
+window.moveSpUp = (idx) => {
+  if (idx <= 0) return;
+  // 현재 화면의 정렬 순서를 다시 계산
+  const agendaOrderMap = buildAgendaOrderMap();
+  const sorted = [...SP].sort((a, b) => {
+    const aOrd = (a.order !== undefined && a.order !== null) ? a.order : null;
+    const bOrd = (b.order !== undefined && b.order !== null) ? b.order : null;
+    if (aOrd !== null && bOrd !== null) return aOrd - bOrd;
+    if (aOrd !== null) return -1;
+    if (bOrd !== null) return 1;
+    const aIdx = agendaOrderMap.get(normalizeSpName(a.name));
+    const bIdx = agendaOrderMap.get(normalizeSpName(b.name));
+    if (aIdx !== undefined && bIdx !== undefined) return aIdx - bIdx;
+    if (aIdx !== undefined) return -1;
+    if (bIdx !== undefined) return 1;
+    return (a.name || "").localeCompare(b.name || "");
+  });
+  // idx와 idx-1 swap
+  [sorted[idx-1], sorted[idx]] = [sorted[idx], sorted[idx-1]];
+  commitSpOrder(sorted.map(s => s.id));
+  draw();
+};
+
+window.moveSpDown = (idx) => {
+  const agendaOrderMap = buildAgendaOrderMap();
+  const sorted = [...SP].sort((a, b) => {
+    const aOrd = (a.order !== undefined && a.order !== null) ? a.order : null;
+    const bOrd = (b.order !== undefined && b.order !== null) ? b.order : null;
+    if (aOrd !== null && bOrd !== null) return aOrd - bOrd;
+    if (aOrd !== null) return -1;
+    if (bOrd !== null) return 1;
+    const aIdx = agendaOrderMap.get(normalizeSpName(a.name));
+    const bIdx = agendaOrderMap.get(normalizeSpName(b.name));
+    if (aIdx !== undefined && bIdx !== undefined) return aIdx - bIdx;
+    if (aIdx !== undefined) return -1;
+    if (bIdx !== undefined) return 1;
+    return (a.name || "").localeCompare(b.name || "");
+  });
+  if (idx >= sorted.length - 1) return;
+  [sorted[idx], sorted[idx+1]] = [sorted[idx+1], sorted[idx]];
+  commitSpOrder(sorted.map(s => s.id));
+  draw();
+};
+
+// 드래그앤드롭 핸들러
+window.spDragStart = (e, idx) => {
+  e.dataTransfer.effectAllowed = "move";
+  e.dataTransfer.setData("text/plain", String(idx));
+};
+
+window.spDrop = (e, dropIdx) => {
+  e.preventDefault();
+  const fromIdx = parseInt(e.dataTransfer.getData("text/plain"), 10);
+  if (isNaN(fromIdx) || fromIdx === dropIdx) return;
+  const agendaOrderMap = buildAgendaOrderMap();
+  const sorted = [...SP].sort((a, b) => {
+    const aOrd = (a.order !== undefined && a.order !== null) ? a.order : null;
+    const bOrd = (b.order !== undefined && b.order !== null) ? b.order : null;
+    if (aOrd !== null && bOrd !== null) return aOrd - bOrd;
+    if (aOrd !== null) return -1;
+    if (bOrd !== null) return 1;
+    const aIdx = agendaOrderMap.get(normalizeSpName(a.name));
+    const bIdx = agendaOrderMap.get(normalizeSpName(b.name));
+    if (aIdx !== undefined && bIdx !== undefined) return aIdx - bIdx;
+    if (aIdx !== undefined) return -1;
+    if (bIdx !== undefined) return 1;
+    return (a.name || "").localeCompare(b.name || "");
+  });
+  const [moved] = sorted.splice(fromIdx, 1);
+  sorted.splice(dropIdx, 0, moved);
+  commitSpOrder(sorted.map(s => s.id));
+  draw();
+};
 window.setAddSpStatus = st => {
   addSpStatus=st;
   const sCol={confirmed:"#22c55e",pending:"#f59e0b",cancelled:"#ef4444"};
