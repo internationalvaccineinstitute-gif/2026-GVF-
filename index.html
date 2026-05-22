@@ -1759,7 +1759,6 @@ function pageAgenda() {
       📁 docx 가져오기
       <input type="file" accept=".docx" style="display:none;" onchange="updateAgenda(event)">
     </label>
-    <button onclick="resetAgenda()" style="padding:7px 14px;border-radius:20px;font-size:12px;font-weight:600;background:#F1F5F9;color:#64748b;border:1px solid #E2E8F0;cursor:pointer;">초기화</button>
     <button onclick="syncAgendaToSP(false)" style="padding:7px 14px;border-radius:20px;font-size:12px;font-weight:600;background:#DBEAFE;color:#1B4FA0;border:1px solid #BFDBFE;cursor:pointer;white-space:nowrap;" title="Agenda 연사를 참석자 관리에 추가/업데이트 (덮어쓰지 않음)">🔄 참석자 관리 동기화</button>
   </div>
   ${orphans.length > 0 ? `
