@@ -2998,7 +2998,7 @@ function pageBudget() {
       ${budgetEditId === item.id ? `
       <div style="padding:14px 16px;background:#F0FDF4;">
         <div style="font-size:11px;font-weight:700;color:#15803d;margin-bottom:8px;">📝 예산 항목 편집</div>
-        <div style="display:grid;grid-template-columns:1fr 180px auto auto;gap:8px;align-items:center;">
+        <div style="display:grid;grid-template-columns:1fr 180px auto auto;gap:8px;align-items:center;margin-bottom:10px;">
           <div>
             <label style="font-size:10px;color:#64748b;font-weight:600;">항목 이름</label>
             <input id="be-label" value="${esc(item.label)}" style="width:100%;padding:6px 10px;border-radius:7px;border:1.5px solid #BBF7D0;font-size:13px;outline:none;">
@@ -3009,6 +3009,10 @@ function pageBudget() {
           </div>
           <button onclick="saveBudgetItem('${item.id}')" style="margin-top:14px;padding:6px 16px;border-radius:8px;background:#0d9488;color:#fff;border:none;cursor:pointer;font-size:13px;font-weight:700;">저장</button>
           <button onclick="window._budgetEditId=null;draw()" style="margin-top:14px;padding:6px 12px;border-radius:8px;background:#F1F5F9;color:#64748b;border:none;cursor:pointer;font-size:13px;">취소</button>
+        </div>
+        <div>
+          <label style="font-size:10px;color:#64748b;font-weight:600;display:block;margin-bottom:3px;">💬 Comment / 특이사항</label>
+          <textarea id="be-comment" placeholder="예: 견적서 수령 / VAT 별도 / 협찬 진행 중 / 분할 결제 등" style="width:100%;padding:8px 10px;border-radius:7px;border:1.5px solid #BBF7D0;font-size:12px;outline:none;resize:vertical;min-height:60px;font-family:inherit;">${esc(item.comment||"")}</textarea>
         </div>
       </div>` : `
       <div style="padding:14px 16px;cursor:pointer;display:flex;align-items:center;gap:12px;" onclick="window._budgetOpenBlocks=window._budgetOpenBlocks||{};window._budgetOpenBlocks['${item.id}']=!${isOpen};draw();">
@@ -3029,6 +3033,7 @@ function pageBudget() {
             <span style="font-size:10px;color:#94a3b8;">전체의 ${BASE_BUDGET>0?Math.round((item.budget/BASE_BUDGET)*100):0}%</span>
             ${!isTravel && item.paid?`<span style="color:#94a3b8;">·</span><span style="color:#15803d;font-weight:700;">실지출 ${krw(item.budget)}</span>`:""}
           </div>
+          ${item.comment?`<div style="margin-top:7px;padding:6px 10px;background:#FFFBEB;border-left:3px solid #FDE68A;border-radius:5px;font-size:11px;color:#92400e;display:flex;gap:6px;align-items:flex-start;"><span style="font-size:11px;flex-shrink:0;">💬</span><span style="white-space:pre-wrap;line-height:1.4;">${esc(item.comment)}</span></div>`:""}
         </div>
         <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;" onclick="event.stopPropagation();">
           ${!isTravel?`<label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;padding:4px 9px;background:${item.paid?'#dcfce7':'#F1F5F9'};border-radius:14px;border:1px solid ${item.paid?'#86efac':'#E2E8F0'};" title="지급 상태 토글">
@@ -3039,7 +3044,7 @@ function pageBudget() {
             </span>
             <span style="font-size:10px;font-weight:700;color:${item.paid?'#15803d':'#64748b'};">${item.paid?'완료':'미지급'}</span>
           </label>`:''}
-          <button onclick="editBudgetItem('${item.id}')" style="background:none;border:none;cursor:pointer;font-size:14px;color:#94a3b8;padding:4px;" title="항목 편집">✏️</button>
+          <button onclick="editBudgetItem('${item.id}')" style="background:${item.comment?'#FEF3C7':'none'};border:${item.comment?'1px solid #FDE68A':'none'};border-radius:${item.comment?'6px':'0'};cursor:pointer;font-size:14px;color:${item.comment?'#92400e':'#94a3b8'};padding:4px 6px;" title="${item.comment?'코멘트 있음 — 편집':'항목 편집'}">${item.comment?'💬':'✏️'}</button>
           <button onclick="toggleBudgetItemAttach('${item.id}')" style="background:none;border:none;cursor:pointer;font-size:14px;padding:4px;color:${(item.attachments||[]).length>0?'#0d9488':'#94a3b8'};" title="파일 첨부">📎${(item.attachments||[]).length>0?`<sup style="font-size:10px;font-weight:700;color:#0d9488;">${(item.attachments||[]).length}</sup>`:""}</button>
           <button onclick="deleteBudgetItem('${item.id}')" style="background:none;border:none;cursor:pointer;font-size:14px;color:#fca5a5;padding:4px;" title="항목 삭제">🗑</button>
           <span style="font-size:13px;color:#94a3b8;">${isOpen?"▲":"▼"}</span>
@@ -3787,7 +3792,8 @@ window.toggleTravelPaid = (key) => {
 window.saveBudgetItem = id => {
   const label=document.getElementById("be-label")?.value.trim();
   const budget=parseInt(document.getElementById("be-budget")?.value)||0;
-  if(label) BUDGET_ITEMS=BUDGET_ITEMS.map(i=>i.id===id?{...i,label,budget}:i);
+  const comment=document.getElementById("be-comment")?.value.trim()||"";
+  if(label) BUDGET_ITEMS=BUDGET_ITEMS.map(i=>i.id===id?{...i,label,budget,comment}:i);
   window._budgetEditId=null; scheduleSave();
 };
 window.deleteBudgetItem = id => { BUDGET_ITEMS=BUDGET_ITEMS.filter(i=>i.id!==id); window._budgetEditId=null; scheduleSave(); };
