@@ -2611,16 +2611,17 @@ function pageSpeakers() {
     const cfg = ATTENDEES_CONFIG;
     const isConfigured = !!cfg.webAppUrl;
     const lastSyncStr = cfg.lastSync ? new Date(cfg.lastSync).toLocaleString("ko-KR") : "한 번도 동기화 안 됨";
-    const confCount = ATTENDEES.filter(a => /confirm|확정|승인|approved/i.test(a.status||"")).length;
-    const pendCount = ATTENDEES.length - confCount;
+
+    const onsiteCount = ATTENDEES.filter(a => getAttendanceMode(a) === "onsite").length;
+    const virtualCount = ATTENDEES.filter(a => getAttendanceMode(a) === "virtual").length;
 
     return tabBar + `
     <!-- 통계 카드 -->
     <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
       ${[
         {l:"전체 참가자",v:ATTENDEES.length,c:"#1B4FA0",bg:"#EFF6FF"},
-        {l:"확정/승인",v:confCount,c:"#15803d",bg:"#dcfce7"},
-        {l:"대기/검토",v:pendCount,c:"#92400e",bg:"#fef3c7"}
+        {l:"🏢 On-site",v:onsiteCount,c:"#0d9488",bg:"#F0FDFA"},
+        {l:"💻 Virtual",v:virtualCount,c:"#7c3aed",bg:"#F5F3FF"}
       ].map(({l,v,c,bg})=>`<div style="background:${bg};border-radius:9px;padding:10px 16px;display:flex;align-items:center;gap:8px;box-shadow:0 1px 4px rgba(0,0,0,.06);"><span style="font-size:22px;font-weight:800;color:${c};">${v}</span><span style="font-size:12px;font-weight:600;color:${c};">${l}</span></div>`).join("")}
     </div>
 
@@ -3070,17 +3071,11 @@ function pageBudget() {
         ${window._budgetMeta?.fileName ? `📁 ${esc(window._budgetMeta.fileName)} · ${esc(window._budgetMeta.updatedAt||"")}` : "어떤 형식의 엑셀이든 자동 감지하여 반영"}
       </div>
     </div>
-    <button onclick="downloadBudgetTemplate()" style="padding:6px 12px;border-radius:18px;font-size:11px;font-weight:600;background:#EFF6FF;color:#1B4FA0;border:1px solid #BFDBFE;cursor:pointer;white-space:nowrap;" title="템플릿 다운로드 (선택사항)">
-      📥 템플릿
-    </button>
     <label style="padding:6px 14px;border-radius:18px;cursor:pointer;font-size:12px;font-weight:700;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;border:none;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;" title="아무 엑셀 파일이나 업로드 — 헤더로 자동 감지">
       📊 엑셀 가져오기
       <input type="file" accept=".xlsx,.xls,.csv" style="display:none;" onchange="importBudgetExcel(event)">
     </label>
     <button onclick="fixTravelCategory()" style="padding:6px 12px;border-radius:18px;font-size:11px;font-weight:600;background:#FAFCFF;color:#1B4FA0;border:1px solid #BFDBFE;cursor:pointer;white-space:nowrap;" title="Travel 카테고리를 연사 명단 방식으로 정리">✈️ Travel 정리</button>
-    <button onclick="resetBudget()" style="padding:6px 12px;border-radius:18px;font-size:11px;font-weight:600;background:#FEF2F2;color:#ef4444;border:1px solid #FECACA;cursor:pointer;white-space:nowrap;">
-      🔄 초기화
-    </button>
   </div>
   <div id="budget-import-status"></div>
   <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:16px;" class="budget-kpi-grid">
@@ -5387,19 +5382,49 @@ window.addCl = cat => {
 
 let addSpStatus="pending", spEditStatus=null;
 // ─────────── 일반 참가자 (Google Sheets 연동) ───────────
+// 참가자의 참석 방식 판별: "onsite" | "virtual"
+// 29번 이전(시트 행 30 미만)은 문항이 없었으므로 On-site로 간주
+function getAttendanceMode(a) {
+  const keys = Object.keys(a).filter(k => !k.startsWith("_") && k !== "id");
+  const modeKey = keys.find(k => /on.?site|virtual|참석.*방식|attendance.*type|참석.*형태|현장|온라인|in.?person|온.?오프/i.test(k));
+  if (modeKey && a[modeKey]) {
+    const v = String(a[modeKey]).toLowerCase();
+    if (/virtual|online|온라인|화상|원격|remote|zoom|웹/i.test(v)) return "virtual";
+    if (/on.?site|offline|현장|대면|in.?person|참석|오프라인/i.test(v)) return "onsite";
+  }
+  // 문항 값 없음 → On-site로 간주 (29번 이전 응답 포함)
+  return "onsite";
+}
+
 function renderAttendeesList() {
   const search = (window._attendeesSearch || "").toLowerCase().trim();
-  const filtered = search ? ATTENDEES.filter(a =>
-    Object.values(a).some(v => String(v||"").toLowerCase().includes(search))
-  ) : ATTENDEES;
+  const modeFilter = window._attendeesModeFilter || "all"; // all | onsite | virtual
+  let filtered = ATTENDEES;
+  if (modeFilter !== "all") {
+    filtered = filtered.filter(a => getAttendanceMode(a) === modeFilter);
+  }
+  if (search) {
+    filtered = filtered.filter(a =>
+      Object.values(a).some(v => String(v||"").toLowerCase().includes(search))
+    );
+  }
+  const mkFilterBtn = (val, label) => {
+    const active = modeFilter === val;
+    return `<button onclick="window._attendeesModeFilter='${val}';draw()" style="padding:5px 11px;border-radius:14px;border:1.5px solid ${active?'#1B4FA0':'#E2E8F0'};background:${active?'#1B4FA0':'#fff'};color:${active?'#fff':'#64748b'};font-size:11px;font-weight:700;cursor:pointer;">${label}</button>`;
+  };
   let html = `
   <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap;">
-    <input type="text" placeholder="🔍 이름·소속·이메일로 검색" value="${esc(window._attendeesSearch||'')}" oninput="window._attendeesSearch=this.value;draw()" style="flex:1;min-width:200px;padding:7px 12px;border-radius:8px;border:1.5px solid #BFDBFE;font-size:13px;outline:none;">
+    <input type="text" placeholder="🔍 이름·소속·이메일로 검색" value="${esc(window._attendeesSearch||'')}" oninput="window._attendeesSearch=this.value;draw()" style="flex:1;min-width:180px;padding:7px 12px;border-radius:8px;border:1.5px solid #BFDBFE;font-size:13px;outline:none;">
     <button onclick="exportAttendeesToExcel()" class="btn btn-sm" style="background:#fff;color:#0d9488;border:1px solid #99F6E4;">📊 Excel</button>
-    ${ATTENDEES.length>0?`<span style="font-size:11px;color:#64748b;">${filtered.length}/${ATTENDEES.length}명 표시</span>`:''}
+  </div>
+  <div style="display:flex;gap:6px;margin-bottom:10px;align-items:center;flex-wrap:wrap;">
+    ${mkFilterBtn("all","전체")}
+    ${mkFilterBtn("onsite","🏢 On-site")}
+    ${mkFilterBtn("virtual","💻 Virtual")}
+    ${ATTENDEES.length>0?`<span style="font-size:11px;color:#64748b;margin-left:auto;">${filtered.length}/${ATTENDEES.length}명 표시</span>`:''}
   </div>`;
   if (filtered.length === 0) {
-    html += `<div class="card" style="text-align:center;padding:30px;color:#94a3b8;font-size:13px;">검색 결과가 없습니다</div>`;
+    html += `<div class="card" style="text-align:center;padding:30px;color:#94a3b8;font-size:13px;">${search||modeFilter!=='all'?'조건에 맞는 참가자가 없습니다':'참가자가 없습니다'}</div>`;
     return html;
   }
 
@@ -5434,14 +5459,19 @@ function renderAttendeesList() {
     const isConfirmed = /confirm|확정|승인|approved/i.test(status);
     const statusColor = isConfirmed ? "#15803d" : "#92400e";
     const statusBg = isConfirmed ? "#dcfce7" : "#fef3c7";
+    const mode = getAttendanceMode(a);
+    const modeBadge = mode === "virtual"
+      ? `<span style="font-size:9px;background:#F5F3FF;color:#7c3aed;padding:1px 6px;border-radius:4px;font-weight:700;">💻 Virtual</span>`
+      : `<span style="font-size:9px;background:#F0FDFA;color:#0d9488;padding:1px 6px;border-radius:4px;font-weight:700;">🏢 On-site</span>`;
 
     html += `
     <div class="card" style="padding:0;overflow:hidden;border:1px solid #E2E8F0;">
       <div onclick="toggleAttendeeCard('${a.id}')" style="padding:11px 13px;cursor:pointer;display:flex;align-items:center;gap:10px;">
-        <div style="width:32px;height:32px;border-radius:8px;background:${isConfirmed?'#dcfce7':'#EFF6FF'};color:${isConfirmed?'#15803d':'#1B4FA0'};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;flex-shrink:0;">${i+1}</div>
+        <div style="width:32px;height:32px;border-radius:8px;background:${mode==='virtual'?'#F5F3FF':'#F0FDFA'};color:${mode==='virtual'?'#7c3aed':'#0d9488'};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;flex-shrink:0;">${i+1}</div>
         <div style="flex:1;min-width:0;">
           <div style="font-size:13px;font-weight:700;color:#0B1D3F;display:flex;align-items:center;gap:5px;flex-wrap:wrap;">
             <span>${esc(fullName)}</span>
+            ${modeBadge}
             ${status?`<span style="font-size:9px;background:${statusBg};color:${statusColor};padding:1px 6px;border-radius:4px;font-weight:700;">${esc(status)}</span>`:""}
           </div>
           ${(org || title) ? `<div style="font-size:11px;color:#64748b;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${title?esc(title)+(org?" · ":""):""}${esc(org)}</div>` : ""}
@@ -5679,17 +5709,23 @@ window.copyAppsScriptCode = () => {
 window.exportAttendeesToExcel = () => {
   if (ATTENDEES.length === 0) { alert("내보낼 참가자가 없습니다"); return; }
   if (typeof XLSX === "undefined") { alert("Excel 라이브러리 로드 중..."); return; }
+  // 현재 필터 반영
+  const modeFilter = window._attendeesModeFilter || "all";
+  let source = ATTENDEES;
+  if (modeFilter !== "all") source = source.filter(a => getAttendanceMode(a) === modeFilter);
   const keys = Object.keys(ATTENDEES[0]).filter(k => !k.startsWith("_") && k !== "id");
-  const data = ATTENDEES.map(a => {
-    const r = {};
+  const data = source.map(a => {
+    const r = {"참석방식": getAttendanceMode(a) === "virtual" ? "Virtual" : "On-site"};
     keys.forEach(k => r[k] = a[k] || "");
     return r;
   });
   const ws = XLSX.utils.json_to_sheet(data);
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "일반 참가자");
+  const sheetName = modeFilter === "onsite" ? "On-site 참가자" : modeFilter === "virtual" ? "Virtual 참가자" : "전체 참가자";
+  XLSX.utils.book_append_sheet(wb, ws, sheetName);
   const today = new Date().toISOString().slice(0,10);
-  XLSX.writeFile(wb, `GVF2026_참가자_${today}.xlsx`);
+  const suffix = modeFilter === "all" ? "전체" : modeFilter === "onsite" ? "Onsite" : "Virtual";
+  XLSX.writeFile(wb, `GVF2026_참가자_${suffix}_${today}.xlsx`);
 };
 
 window.toggleSpAdd = () => { spShowAdd=!spShowAdd; spEditId=null; draw(); };
