@@ -5425,7 +5425,7 @@ function renderAttendeesList() {
   html += `<div style="display:flex;flex-direction:column;gap:8px;">`;
   filtered.forEach((a, i) => {
     const isOpen = expandedId === a.id;
-    const fullName = [a[lastNameKey], a[nameKey]].filter(Boolean).join(" ") || a[nameKey] || `참가자 #${i+1}`;
+    const fullName = [a[nameKey], a[lastNameKey]].filter(Boolean).join(" ") || a[nameKey] || `참가자 #${i+1}`;
     const org = a[orgKey] || "";
     const title = a[titleKey] || "";
     const email = a[emailKey] || "";
