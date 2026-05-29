@@ -1351,9 +1351,9 @@ function pageHome() {
     </div>
   </div>
   <div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;"><div class="card-hd" style="margin:0;font-size:15px;">ℹ️ 행사 개요</div><button class="btn btn-g btn-sm" onclick="resetData()">🔄 데이터 초기화</button></div>
+    <div style="margin-bottom:12px;"><div class="card-hd" style="margin:0;font-size:15px;">ℹ️ 행사 개요</div></div>
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">
-      ${[{l:"날짜",v:FORUM_DATE},{l:"장소",v:"Royal Hall, P&P Conv."},{l:"시간",v:"09:30–18:00"},{l:"예상 참석",v:"200명"}].map(({l,v})=>`<div style="background:#FAFBFF;border-radius:8px;padding:10px 13px;border:1px solid #E2E8F0;"><div style="font-size:10px;color:#64748b;font-weight:700;margin-bottom:4px;">${l}</div><div style="font-size:12px;font-weight:700;">${v}</div></div>`).join("")}
+      ${[{l:"날짜",v:FORUM_DATE},{l:"장소",v:"Royal Hall, P&P Conv."},{l:"시간",v:"09:30–18:00"},{l:"예상 참석",v:"200명"}].map(({l,v})=>`<div style="background:#FAFBFF;border-radius:8px;padding:10px 13px;border:1px solid #E2E8F0;"><div style="font-size:12px;color:#64748b;font-weight:700;margin-bottom:4px;">${l}</div><div style="font-size:14px;font-weight:700;">${v}</div></div>`).join("")}
     </div>
   </div>`;
 }
