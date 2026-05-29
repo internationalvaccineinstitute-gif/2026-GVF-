@@ -41,8 +41,8 @@ aside{width:240px;background:linear-gradient(175deg,#061220,#0B1D3F 55%,#0F2650)
 .prog-box{margin:10px 12px 0;padding:8px 11px;background:rgba(255,255,255,.05);border-radius:8px;}
 .sync-box{margin:6px 12px 0;padding:6px 10px;background:rgba(255,255,255,.04);border-radius:7px;font-size:12px;min-height:24px;}
 .urg-box{margin:7px 12px 0;padding:7px 10px;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.25);border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:7px;font-size:13px;color:#FCA5A5;font-weight:600;}
-.sb-grp{font-size:12px;color:rgba(255,255,255,.4);font-weight:700;letter-spacing:.07em;text-transform:uppercase;padding:6px 13px 4px;}
-.nav-item{display:flex;align-items:center;gap:8px;padding:8px 13px;cursor:pointer;border-radius:7px;margin:1px 7px;font-size:14px;color:rgba(255,255,255,.75);transition:all .15s;user-select:none;}
+.sb-grp{font-size:12px;color:rgba(255,255,255,.4);font-weight:700;letter-spacing:.07em;text-transform:uppercase;padding:5px 13px 4px;}
+.nav-item{display:flex;align-items:center;gap:8px;padding:7px 13px;cursor:pointer;border-radius:7px;margin:1px 7px;font-size:14px;color:rgba(255,255,255,.75);transition:all .15s;user-select:none;}
 .nav-item:hover{background:rgba(255,255,255,.07);color:#fff;}
 .nav-item.active{background:linear-gradient(135deg,#1B4FA0,#2563EB);color:#fff;font-weight:600;box-shadow:0 3px 12px rgba(37,99,235,.3);}
 .sb-div{margin:6px 13px;height:1px;background:rgba(255,255,255,.06);}
@@ -50,7 +50,7 @@ aside{width:240px;background:linear-gradient(175deg,#061220,#0B1D3F 55%,#0F2650)
 #body{flex:1;padding:18px 22px;overflow-y:auto;font-size:15px;padding-bottom:80px;}
 .card{background:#fff;border-radius:12px;padding:16px 20px;box-shadow:0 1px 3px rgba(0,0,0,.07),0 6px 20px rgba(0,0,0,.06);margin-bottom:14px;border:1px solid rgba(226,232,240,.6);}
 .card-hd{font-size:var(--fs-lg);font-weight:700;color:#0B1D3F;margin-bottom:12px;}
-.kpi{background:#fff;border-radius:12px;padding:13px 16px;box-shadow:0 1px 3px rgba(0,0,0,.07),0 6px 18px rgba(0,0,0,.06);border:1px solid rgba(226,232,240,.6);}
+.kpi{background:#fff;border-radius:12px;padding:8px 16px;box-shadow:0 1px 3px rgba(0,0,0,.07),0 6px 18px rgba(0,0,0,.06);border:1px solid rgba(226,232,240,.6);}
 #main{flex:1;display:flex;flex-direction:column;overflow:hidden;}
 #topbar{height:56px;background:#fff;border-bottom:1px solid #E2E8F0;display:flex;align-items:center;padding:0 16px;box-shadow:0 2px 8px rgba(0,0,0,.05);flex-shrink:0;}
 #pg-ttl{font-size:20px;font-weight:700;color:#0B1D3F;}
@@ -139,7 +139,7 @@ th,td{padding:6px 8px !important;}
 .ag-time{font-size:11px !important;padding:8px 8px !important;}
 .ag-prog{font-size:12px !important;padding:8px 10px !important;}
 #bottom-nav{display:block;}
-.kpi{padding:10px 12px;}
+.kpi{padding:7px 12px;}
 input[type=text],textarea{font-size:16px !important;}
 input[type=date]{font-size:16px !important;}
 .btn{min-height:36px;}
@@ -164,15 +164,6 @@ input[type=date]{font-size:16px !important;}
       <div class="dday-dt">2026년 6월 25일</div>
     </div>
     <div id="sb-calendar" style="margin:10px 10px 0;padding:8px 10px;background:rgba(255,255,255,.04);border-radius:10px;"></div>
-    <div class="prog-box">
-      <div style="display:flex;justify-content:space-between;font-size:12px;color:rgba(255,255,255,.55);margin-bottom:5px;">
-        <span>전체 진행률</span><span id="sb-pct" style="color:#60A5FA;font-weight:700;">0%</span>
-      </div>
-      <div style="height:4px;background:rgba(255,255,255,.1);border-radius:99px;overflow:hidden;">
-        <div id="sb-pb" style="height:100%;background:linear-gradient(90deg,#60A5FA,#34D399);border-radius:99px;width:0;transition:width .4s;"></div>
-      </div>
-    </div>
-    <div id="sb-next-ms" onclick="goPage('home')" style="display:none;margin:8px 10px 0;padding:9px 11px;background:linear-gradient(135deg,rgba(96,165,250,.15),rgba(52,211,153,.1));border:1px solid rgba(96,165,250,.25);border-radius:10px;cursor:pointer;"></div>
     <div class="sync-box" id="sync-status"></div>
     <div class="urg-box" id="urg-box" onclick="goPage('checklist')" style="display:none;"></div>
     <div id="sb-menu-area" style="padding-top:8px;"></div>
@@ -708,7 +699,7 @@ function renderSidebarMenu() {
   SIDEBAR_MENU.forEach((grp, gi) => {
     if (gi > 0) html += `<div class="sb-div"></div>`;
     html += `<div style="display:flex;align-items:center;justify-content:space-between;padding:0 14px;">
-      <div class="sb-grp" style="margin:0;padding:14px 0 6px;">${sbEditMode
+      <div class="sb-grp" style="margin:0;padding:12px 0 5px;">${sbEditMode
         ? `<input value="${esc(grp.group)}" onblur="setSbGroup(${gi}, this.value)" style="background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:rgba(255,255,255,.8);font-size:10px;font-weight:700;letter-spacing:.07em;padding:2px 6px;border-radius:4px;width:100px;">`
         : esc(grp.group)
       }</div>
@@ -1010,12 +1001,7 @@ function renderSidebarCalendar() {
               : hasTodo ? '<div style="position:absolute;bottom:1px;left:50%;transform:translateX(-50%);width:3px;height:3px;border-radius:50%;background:#34D399;"></div>' : "";
     html += `<div onclick="selectCalDate('${ds}')" style="position:relative;padding:4px 0;border-radius:5px;cursor:pointer;background:${bg};color:${color};font-weight:${weight};font-size:10px;">${d}${dot}</div>`;
   }
-  html += `</div>
-  <div style="display:flex;gap:6px;justify-content:space-between;margin-top:6px;font-size:9px;color:rgba(255,255,255,.4);">
-    <span><span style="color:#ef4444;">●</span> 마감</span>
-    <span><span style="color:#34D399;">●</span> To-do</span>
-    <span><span style="color:#fbbf24;">●</span> 포럼</span>
-  </div>`;
+  html += `</div>`;
   el.innerHTML = html;
 }
 
@@ -1268,86 +1254,86 @@ function pageHome() {
   }
 
   const milestoneHtml = window._msEditMarker ? milestoneHtmlOverride : `
-  <div class="card" style="background:#fff;border:1px solid #E2E8F0;padding:18px 20px;margin-bottom:14px;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:8px;">
+  <div class="card" style="background:#fff;border:1px solid #E2E8F0;padding:7px 18px;margin-bottom:8px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:7px;flex-wrap:wrap;gap:5px;">
       <div>
-        <div style="font-size:15px;font-weight:700;color:#0B1D3F;">🏁 포럼 핵심 마일스톤 흐름</div>
-        <div style="font-size:13px;color:#64748b;margin-top:2px;">전체 포럼 준비의 큰 틀과 현재 위치</div>
+        <div style="font-size:11px;font-weight:700;color:#0B1D3F;">🏁 포럼 핵심 마일스톤 흐름</div>
+        <div style="font-size:9px;color:#64748b;margin-top:1px;">전체 포럼 준비의 큰 틀과 현재 위치</div>
       </div>
-      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-        <span style="font-size:13px;background:#EFF6FF;color:#1B4FA0;padding:3px 10px;border-radius:7px;font-weight:600;">오늘: ${(()=>{const d=new Date();return d.getFullYear()+'.'+String(d.getMonth()+1).padStart(2,'0')+'.'+String(d.getDate()).padStart(2,'0');})()}</span>
-        <span style="font-size:15px;background:#FEF2F2;color:#dc2626;padding:4px 13px;border-radius:99px;font-weight:800;">D-${calcDDay()}</span>
-        <button onclick="toggleMsEdit()" title="마일스톤 편집" style="padding:4px 10px;border-radius:7px;background:#F1F5F9;color:#64748b;border:1px solid #E2E8F0;cursor:pointer;font-size:13px;font-weight:600;">✏️ 편집</button>
+      <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;">
+        <span style="font-size:9px;background:#EFF6FF;color:#1B4FA0;padding:2px 7px;border-radius:5px;font-weight:600;">오늘: ${(()=>{const d=new Date();return d.getFullYear()+'.'+String(d.getMonth()+1).padStart(2,'0')+'.'+String(d.getDate()).padStart(2,'0');})()}</span>
+        <span style="font-size:11px;background:#FEF2F2;color:#dc2626;padding:2px 9px;border-radius:99px;font-weight:800;">D-${calcDDay()}</span>
+        <button onclick="toggleMsEdit()" title="마일스톤 편집" style="padding:2px 7px;border-radius:5px;background:#F1F5F9;color:#64748b;border:1px solid #E2E8F0;cursor:pointer;font-size:9px;font-weight:600;">✏️ 편집</button>
       </div>
     </div>
-    <div style="position:relative;display:flex;justify-content:space-between;align-items:flex-start;padding:0 8px;">
-      <div style="position:absolute;left:24px;right:24px;top:28px;height:3px;background:#E2E8F0;border-radius:99px;z-index:0;"></div>
-      <div style="position:absolute;left:24px;top:28px;height:3px;background:linear-gradient(90deg,#1B4FA0,#3B82F6);border-radius:99px;z-index:0;width:calc(${progressPercent}% - ${progressPercent > 0 ? '24px' : '0px'});transition:all .5s;"></div>
+    <div style="position:relative;display:flex;justify-content:space-between;align-items:flex-start;padding:0 7px;">
+      <div style="position:absolute;left:18px;right:18px;top:15px;height:2px;background:#E2E8F0;border-radius:99px;z-index:0;"></div>
+      <div style="position:absolute;left:18px;top:15px;height:2px;background:linear-gradient(90deg,#1B4FA0,#3B82F6);border-radius:99px;z-index:0;width:calc(${progressPercent}% - ${progressPercent > 0 ? '18px' : '0px'});transition:all .5s;"></div>
       ${msWithStatus.map((m, idx) => {
         const isCompleted = m.status === "completed";
         const isCurrent = m.status === "current";
         const dotStyle = isCompleted
           ? "background:linear-gradient(135deg,#1B4FA0,#3B82F6);border:2px solid #1B4FA0;color:#fff;"
           : isCurrent
-            ? "background:#fff;border:3px solid #1B4FA0;color:#1B4FA0;box-shadow:0 0 0 4px rgba(27,79,160,0.15);transform:scale(1.12);"
+            ? "background:#fff;border:2px solid #1B4FA0;color:#1B4FA0;box-shadow:0 0 0 3px rgba(27,79,160,0.15);transform:scale(1.1);"
             : "background:#fff;border:2px solid #CBD5E1;color:#94a3b8;";
         const dateColor = isCurrent ? "#1B4FA0" : isCompleted ? "#475569" : "#94a3b8";
         const titleColor = isCurrent ? "#1B4FA0" : isCompleted ? "#0B1D3F" : "#94a3b8";
         const dotContent = isCompleted
-          ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>'
-          : `<span style="font-size:14px;font-weight:800;">${idx+1}</span>`;
+          ? '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>'
+          : `<span style="font-size:10px;font-weight:800;">${idx+1}</span>`;
         const progress = calcMsProgress(m);
         const hasCats = (m.cats||[]).length > 0;
-        return `<div onclick="openMilestone(${idx})" style="position:relative;display:flex;flex-direction:column;align-items:center;z-index:1;flex:1;min-width:0;cursor:${hasCats?'pointer':'default'};padding:4px;border-radius:8px;transition:background .2s;" onmouseover="this.style.background='#F8FAFC'" onmouseout="this.style.background='transparent'" title="${hasCats?'클릭: 연결된 체크리스트 보기':''}">
-          <span style="font-size:12px;font-weight:${isCurrent?'800':'600'};color:${dateColor};margin-bottom:6px;">${esc(m.dateLabel)}</span>
-          <div style="width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;${dotStyle};transition:all .3s;">
+        return `<div onclick="openMilestone(${idx})" style="position:relative;display:flex;flex-direction:column;align-items:center;z-index:1;flex:1;min-width:0;cursor:${hasCats?'pointer':'default'};padding:2px;border-radius:6px;transition:background .2s;" onmouseover="this.style.background='#F8FAFC'" onmouseout="this.style.background='transparent'" title="${hasCats?'클릭: 연결된 체크리스트 보기':''}">
+          <span style="font-size:9px;font-weight:${isCurrent?'800':'600'};color:${dateColor};margin-bottom:2px;">${esc(m.dateLabel)}</span>
+          <div style="width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;${dotStyle};transition:all .3s;">
             ${dotContent}
           </div>
-          <span style="font-size:13px;margin-top:8px;font-weight:${isCurrent?'800':'600'};color:${titleColor};text-align:center;white-space:nowrap;line-height:1.3;">${esc(m.title)}</span>
+          <span style="font-size:9px;margin-top:3px;font-weight:${isCurrent?'800':'600'};color:${titleColor};text-align:center;white-space:nowrap;line-height:1.2;">${esc(m.title)}</span>
           ${progress !== null ? `
-            <div style="margin-top:5px;width:50px;height:3px;background:#E2E8F0;border-radius:99px;overflow:hidden;">
+            <div style="margin-top:2px;width:36px;height:2px;background:#E2E8F0;border-radius:99px;overflow:hidden;">
               <div style="height:100%;width:${progress}%;background:${progress===100?'#16a34a':isCurrent?'#1B4FA0':'#94a3b8'};border-radius:99px;transition:width .4s;"></div>
             </div>
-            <span style="font-size:11px;font-weight:700;color:${progress===100?'#16a34a':isCurrent?'#1B4FA0':'#94a3b8'};margin-top:2px;">${progress}%</span>
+            <span style="font-size:8px;font-weight:700;color:${progress===100?'#16a34a':isCurrent?'#1B4FA0':'#94a3b8'};margin-top:1px;">${progress}%</span>
           ` : ''}
-          ${isCurrent ? `<span style="margin-top:4px;background:linear-gradient(135deg,#1B4FA0,#3B82F6);color:#fff;font-size:11px;font-weight:800;padding:2px 7px;border-radius:5px;letter-spacing:.05em;animation:pulse 2s infinite;">진행중</span>` : ''}
+          ${isCurrent ? `<span style="margin-top:2px;background:linear-gradient(135deg,#1B4FA0,#3B82F6);color:#fff;font-size:8px;font-weight:800;padding:1px 5px;border-radius:4px;letter-spacing:.05em;animation:pulse 2s infinite;">진행중</span>` : ''}
         </div>`;
       }).join('')}
     </div>
   </div>`;
 
   return milestoneHtml + `
-  <div class="hero">
+  <div class="hero" style="padding:16px 20px;">
     <div>
-      <div style="font-size:15px;opacity:.5;font-weight:700;letter-spacing:.07em;margin-bottom:4px;">2026 IVI GLOBAL VACCINE FORUM</div>
-      <div style="display:flex;align-items:baseline;gap:8px;">
-        <div style="font-size:50px;font-weight:900;line-height:1;letter-spacing:-3px;">D-${D_DAY}</div>
-        <div style="font-size:18px;opacity:.5;">일 남음</div>
+      <div style="font-size:13px;opacity:.5;font-weight:700;letter-spacing:.07em;margin-bottom:4px;">2026 IVI GLOBAL VACCINE FORUM</div>
+      <div style="display:flex;align-items:baseline;gap:7px;">
+        <div style="font-size:45px;font-weight:900;line-height:1;letter-spacing:-3px;">D-${D_DAY}</div>
+        <div style="font-size:16px;opacity:.5;">일 남음</div>
       </div>
-      <div style="font-size:13px;opacity:.5;margin-top:5px;">${FORUM_DATE} · Royal Hall (3F), Peace &amp; Park Convention, Seoul</div>
+      <div style="font-size:12px;opacity:.5;margin-top:5px;">${FORUM_DATE} · Royal Hall (3F), Peace &amp; Park Convention, Seoul</div>
     </div>
     <div style="text-align:right;">
-      <div style="font-size:15px;opacity:.45;margin-bottom:8px;">KDCA · IVI · EuBiologics · RIGHT Foundation</div>
-      <div style="display:flex;gap:7px;justify-content:flex-end;margin-bottom:8px;">
-        ${[{l:"연사",v:SP.length+"명"},{l:"예상참석",v:"200명"},{l:"세션",v:"4개"},{l:"시간",v:"8.5h"}].map(({l,v})=>`<div style="background:rgba(255,255,255,.12);border-radius:7px;padding:6px 11px;text-align:center;"><div style="font-size:13px;opacity:.5;">${l}</div><div style="font-size:15px;font-weight:700;">${v}</div></div>`).join("")}
+      <div style="font-size:13px;opacity:.45;margin-bottom:7px;">KDCA · IVI · EuBiologics · RIGHT Foundation</div>
+      <div style="display:flex;gap:6px;justify-content:flex-end;margin-bottom:7px;">
+        ${[{l:"연사",v:SP.length+"명"},{l:"예상참석",v:"200명"},{l:"세션",v:"4개"},{l:"시간",v:"8.5h"}].map(({l,v})=>`<div style="background:rgba(255,255,255,.12);border-radius:7px;padding:5px 10px;text-align:center;"><div style="font-size:12px;opacity:.5;">${l}</div><div style="font-size:14px;font-weight:700;">${v}</div></div>`).join("")}
       </div>
-      ${savedAt?`<div style="font-size:10px;opacity:.45;">💾 저장: ${savedAt}</div>`:""}
+      ${savedAt?`<div style="font-size:9px;opacity:.45;">💾 저장: ${savedAt}</div>`:""}
     </div>
   </div>
   <div class="kpi-grid">
-    <div class="kpi"><div style="font-size:15px;color:#64748b;font-weight:700;margin-bottom:4px;">📈 전체 진행률</div><div style="font-size:26px;font-weight:800;color:#1B4FA0;">${ov}%</div>${pctBar(ov,5)}<div style="font-size:10px;color:#94a3b8;margin-top:3px;">${done}/${total}개 완료</div></div>
-    <div class="kpi"><div style="font-size:15px;color:#64748b;font-weight:700;margin-bottom:4px;">👥 연사 확정</div><div style="font-size:26px;font-weight:800;color:#15803d;">${conf}<span style="font-size:13px;color:#94a3b8;font-weight:400;">/${SP.length}</span></div><div style="font-size:10px;color:#94a3b8;margin-top:10px;">대기 ${SP.filter(s=>s.status==="pending").length}명</div></div>
-    <div class="kpi"><div style="font-size:15px;color:#64748b;font-weight:700;margin-bottom:4px;">🚨 긴급 미완료</div><div style="font-size:26px;font-weight:800;color:#dc2626;">${urg.length}<span style="font-size:13px;color:#94a3b8;font-weight:400;"> 건</span></div><div style="font-size:10px;color:#94a3b8;margin-top:10px;">즉시 처리 필요</div></div>
-    <div class="kpi"><div style="font-size:15px;color:#64748b;font-weight:700;margin-bottom:4px;">💰 전체 예산</div><div style="font-size:17px;font-weight:800;color:#92400e;margin-top:4px;">${krw(homeTotalBudget)}</div><div style="font-size:10px;color:#94a3b8;margin-top:6px;">편성 ${homeAllocPct}% · ${BUDGET_ITEMS.length}개 항목</div></div>
+    <div class="kpi"><div style="font-size:10px;color:#64748b;font-weight:700;margin-bottom:3px;">📈 전체 진행률</div><div style="font-size:17px;font-weight:800;color:#1B4FA0;">${ov}%</div>${pctBar(ov,4)}<div style="font-size:7px;color:#94a3b8;margin-top:2px;">${done}/${total}개 완료</div></div>
+    <div class="kpi"><div style="font-size:10px;color:#64748b;font-weight:700;margin-bottom:3px;">👥 연사 확정</div><div style="font-size:17px;font-weight:800;color:#15803d;">${conf}<span style="font-size:9px;color:#94a3b8;font-weight:400;">/${SP.length}</span></div><div style="font-size:7px;color:#94a3b8;margin-top:6px;">대기 ${SP.filter(s=>s.status==="pending").length}명</div></div>
+    <div class="kpi"><div style="font-size:10px;color:#64748b;font-weight:700;margin-bottom:3px;">🚨 긴급 미완료</div><div style="font-size:17px;font-weight:800;color:#dc2626;">${urg.length}<span style="font-size:9px;color:#94a3b8;font-weight:400;"> 건</span></div><div style="font-size:7px;color:#94a3b8;margin-top:6px;">즉시 처리 필요</div></div>
+    <div class="kpi"><div style="font-size:10px;color:#64748b;font-weight:700;margin-bottom:3px;">💰 전체 예산</div><div style="font-size:12px;font-weight:800;color:#92400e;margin-top:3px;">${krw(homeTotalBudget)}</div><div style="font-size:7px;color:#94a3b8;margin-top:4px;">편성 ${homeAllocPct}% · ${BUDGET_ITEMS.length}개 항목</div></div>
   </div>
   <div class="g2">
-    <div class="card"><div class="card-hd" style="font-size:15px;">📊 카테고리별 진행 현황</div>
-      ${catSt.map(({cat,d,t,p})=>`<div style="margin-bottom:11px;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;"><div style="font-size:12px;font-weight:600;">${CAT_ICON[cat]} ${cat}</div><div style="font-size:12px;font-weight:700;color:${pc(p)};">${p}%</div></div>${pctBar(p)}<div style="font-size:10px;color:#94a3b8;margin-top:2px;">${d}/${t} 완료</div></div>`).join("")}
+    <div class="card" style="padding:10px 20px;"><div class="card-hd" style="font-size:15px;margin-bottom:7px;">📊 카테고리별 진행 현황</div>
+      ${catSt.map(({cat,d,t,p})=>`<div style="margin-bottom:7px;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;"><div style="font-size:12px;font-weight:600;">${CAT_ICON[cat]} ${cat}</div><div style="font-size:12px;font-weight:700;color:${pc(p)};">${p}%</div></div>${pctBar(p)}<div style="font-size:10px;color:#94a3b8;margin-top:1px;">${d}/${t} 완료</div></div>`).join("")}
     </div>
-    <div class="card"><div class="card-hd" style="font-size:15px;">🚨 긴급 처리 항목</div>
-      ${urg.slice(0,7).map(t=>`<div style="display:flex;gap:7px;padding:7px 10px;background:#FFF5F5;border-radius:7px;margin-bottom:5px;border:1px solid #FECACA;"><span style="font-size:9px;color:#ef4444;flex-shrink:0;margin-top:4px;">●</span><span style="font-size:12px;color:#1e293b;line-height:1.4;">${esc(t.task)}</span></div>`).join("")}
+    <div class="card" style="padding:10px 20px;"><div class="card-hd" style="font-size:15px;margin-bottom:7px;">🚨 긴급 처리 항목</div>
+      ${urg.slice(0,7).map(t=>`<div style="display:flex;gap:7px;padding:4px 10px;background:#FFF5F5;border-radius:7px;margin-bottom:3px;border:1px solid #FECACA;"><span style="font-size:9px;color:#ef4444;flex-shrink:0;margin-top:3px;">●</span><span style="font-size:12px;color:#1e293b;line-height:1.4;">${esc(t.task)}</span></div>`).join("")}
       ${urg.length>7?`<div style="font-size:11px;color:#94a3b8;text-align:center;">... 외 ${urg.length-7}건</div>`:""}
-      <button class="btn btn-o" onclick="goPage('checklist')" style="width:100%;justify-content:center;margin-top:8px;">체크리스트 전체 보기 →</button>
+      <button class="btn btn-o" onclick="goPage('checklist')" style="width:100%;justify-content:center;margin-top:5px;">체크리스트 전체 보기 →</button>
     </div>
   </div>
   <div class="card">
