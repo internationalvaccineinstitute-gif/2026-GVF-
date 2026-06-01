@@ -30,23 +30,23 @@
 }
 body{font-family:'Apple SD Gothic Neo','Noto Sans KR','Malgun Gothic',sans-serif;background:#EEF2F7;color:#1e293b;font-size:calc(14px * var(--fs-scale));height:100vh;overflow:hidden;}
 #app{display:flex;height:100vh;}
-aside{width:240px;background:linear-gradient(175deg,#061220,#0B1D3F 55%,#0F2650);color:#fff;display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto;transition:transform .25s ease;}
+aside{width:240px;background:#FAFBFC;color:#1e293b;display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto;transition:transform .25s ease;border-right:1px solid #E2E8F0;}
 .sb-top{padding:16px 13px 12px;border-bottom:1px solid rgba(255,255,255,.06);}
 .sb-logo{width:36px;height:36px;background:linear-gradient(135deg,#2563EB,#60A5FA);border-radius:10px;display:flex;align-items:center;justify-content:center;margin-bottom:9px;font-size:18px;}
-.sb-name{font-size:16px;font-weight:700;color:#fff;}
-.sb-sub{font-size:12px;color:rgba(255,255,255,.5);margin-top:3px;}
-.dday-box{margin:10px 10px 0;background:rgba(37,99,235,.18);border:1px solid rgba(96,165,250,.22);border-radius:10px;padding:10px 12px;text-align:center;}
-.dday-n{font-size:32px;font-weight:900;color:#ffffff;letter-spacing:-1px;line-height:1;}
-.dday-dt{font-size:12px;color:rgba(255,255,255,.5);margin-top:3px;}
-.prog-box{margin:10px 12px 0;padding:8px 11px;background:rgba(255,255,255,.05);border-radius:8px;}
-.sync-box{margin:6px 12px 0;padding:6px 10px;background:rgba(255,255,255,.04);border-radius:7px;font-size:12px;min-height:24px;}
-.urg-box{margin:7px 12px 0;padding:7px 10px;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.25);border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:7px;font-size:13px;color:#FCA5A5;font-weight:600;}
-.sb-grp{font-size:12px;color:rgba(255,255,255,.4);font-weight:700;letter-spacing:.07em;text-transform:uppercase;padding:5px 13px 4px;}
-.nav-item{display:flex;align-items:center;gap:8px;padding:7px 13px;cursor:pointer;border-radius:7px;margin:1px 7px;font-size:14px;color:rgba(255,255,255,.75);transition:all .15s;user-select:none;}
-.nav-item:hover{background:rgba(255,255,255,.07);color:#fff;}
+.sb-name{font-size:16px;font-weight:700;color:#0B1D3F;}
+.sb-sub{font-size:12px;color:#64748b;margin-top:3px;}
+.dday-box{margin:10px 10px 0;background:transparent;border:none;border-radius:10px;padding:8px 12px;text-align:center;}
+.dday-n{font-size:32px;font-weight:900;color:#0B1D3F;letter-spacing:-1px;line-height:1;}
+.dday-dt{font-size:12px;color:#64748b;margin-top:3px;}
+.prog-box{margin:10px 12px 0;padding:8px 11px;background:#F1F5F9;border-radius:8px;}
+.sync-box{margin:6px 12px 0;padding:6px 10px;background:#F1F5F9;border-radius:7px;font-size:12px;min-height:24px;color:#64748b;}
+.urg-box{margin:7px 12px 0;padding:7px 10px;background:#FEE2E2;border:1px solid #FECACA;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:7px;font-size:13px;color:#dc2626;font-weight:600;}
+.sb-grp{font-size:12px;color:#94a3b8;font-weight:700;letter-spacing:.07em;text-transform:uppercase;padding:5px 13px 4px;}
+.nav-item{display:flex;align-items:center;gap:8px;padding:7px 13px;cursor:pointer;border-radius:7px;margin:1px 7px;font-size:14px;color:#475569;transition:all .15s;user-select:none;}
+.nav-item:hover{background:#EFF6FF;color:#1B4FA0;}
 .nav-item.active{background:linear-gradient(135deg,#1B4FA0,#2563EB);color:#fff;font-weight:600;box-shadow:0 3px 12px rgba(37,99,235,.3);}
-.sb-div{margin:6px 13px;height:1px;background:rgba(255,255,255,.06);}
-.sb-foot{margin-top:auto;padding:10px 13px;border-top:1px solid rgba(255,255,255,.06);font-size:12px;color:rgba(255,255,255,.3);line-height:1.9;}
+.sb-div{margin:6px 13px;height:1px;background:#E2E8F0;}
+.sb-foot{margin-top:auto;padding:10px 13px;border-top:1px solid #E2E8F0;font-size:12px;color:#94a3b8;line-height:1.9;}
 #body{flex:1;padding:18px 22px;overflow-y:auto;font-size:15px;padding-bottom:80px;}
 .card{background:#fff;border-radius:12px;padding:16px 20px;box-shadow:0 1px 3px rgba(0,0,0,.07),0 6px 20px rgba(0,0,0,.06);margin-bottom:14px;border:1px solid rgba(226,232,240,.6);}
 .card-hd{font-size:var(--fs-lg);font-weight:700;color:#0B1D3F;margin-bottom:12px;}
@@ -59,7 +59,7 @@ aside{width:240px;background:linear-gradient(175deg,#061220,#0B1D3F 55%,#0F2650)
 #sync-pill{font-size:14px;padding:4px 12px;border-radius:20px;font-weight:600;}
 #prog-pill{font-size:14px;color:#1d4ed8;background:#DBEAFE;padding:4px 12px;border-radius:20px;font-weight:600;}
 .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px;}
-.hero{background:linear-gradient(130deg,#071428,#1B4FA0 52%,#3B82F6);border-radius:13px;padding:20px 24px;color:#fff;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 8px 28px rgba(27,79,160,.2);}
+.hero{background:transparent;border:2px solid #0B1D3F;border-radius:13px;padding:20px 24px;color:#0B1D3F;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;}
 .pb{height:5px;background:#E2E8F0;border-radius:99px;overflow:hidden;}
 .pb-f{height:100%;border-radius:99px;transition:width .4s;}
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
@@ -163,7 +163,7 @@ input[type=date]{font-size:16px !important;}
       <div class="dday-n" id="sb-dday">D-</div>
       <div class="dday-dt">2026년 6월 25일</div>
     </div>
-    <div id="sb-calendar" style="margin:10px 10px 0;padding:8px 10px;background:rgba(255,255,255,.04);border-radius:10px;"></div>
+    <div id="sb-calendar" style="margin:10px 10px 0;padding:8px 10px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;"></div>
     <div class="sync-box" id="sync-status"></div>
     <div class="urg-box" id="urg-box" onclick="goPage('checklist')" style="display:none;"></div>
     <div id="sb-menu-area" style="padding-top:8px;"></div>
@@ -171,7 +171,7 @@ input[type=date]{font-size:16px !important;}
       마스터 대시보드 v2.5<br/>
       © IVI, Seoul · 빌드 2026.05.11<br/>
       <span id="fb-status-dot" style="color:#FCA5A5;font-size:11px;font-weight:600;">⚠️ 미연결</span><br/>
-      <button onclick="forceReload()" style="margin-top:6px;padding:3px 9px;border-radius:6px;background:rgba(255,255,255,.08);color:rgba(255,255,255,.6);border:1px solid rgba(255,255,255,.15);font-size:10px;cursor:pointer;">🔄 강제 새로고침</button>
+      <button onclick="forceReload()" style="margin-top:6px;padding:3px 9px;border-radius:6px;background:#F1F5F9;color:#64748b;border:1px solid #E2E8F0;font-size:10px;cursor:pointer;">🔄 강제 새로고침</button>
     </div>
   </aside>
   <div id="sb-overlay" onclick="closeSidebar()"></div>
@@ -973,12 +973,12 @@ function renderSidebarCalendar() {
 
   let html = `
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-    <button onclick="calPrev()" style="background:none;border:none;color:rgba(255,255,255,.6);cursor:pointer;font-size:14px;padding:2px 6px;">◀</button>
-    <span style="font-size:12px;font-weight:700;color:rgba(255,255,255,.85);">${monthName}</span>
-    <button onclick="calNext()" style="background:none;border:none;color:rgba(255,255,255,.6);cursor:pointer;font-size:14px;padding:2px 6px;">▶</button>
+    <button onclick="calPrev()" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:14px;padding:2px 6px;">◀</button>
+    <span style="font-size:12px;font-weight:700;color:#0B1D3F;">${monthName}</span>
+    <button onclick="calNext()" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:14px;padding:2px 6px;">▶</button>
   </div>
   <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;font-size:10px;text-align:center;">
-    ${["일","월","화","수","목","금","토"].map((d,i)=>`<div style="color:${i===0?'#FCA5A5':i===6?'#93C5FD':'rgba(255,255,255,.45)'};font-weight:700;padding:3px 0;">${d}</div>`).join("")}`;
+    ${["일","월","화","수","목","금","토"].map((d,i)=>`<div style="color:${i===0?'#dc2626':i===6?'#1B4FA0':'#94a3b8'};font-weight:700;padding:3px 0;">${d}</div>`).join("")}`;
   // 시작 공백
   for (let i = 0; i < startDow; i++) {
     html += `<div></div>`;
@@ -991,14 +991,14 @@ function renderSidebarCalendar() {
     const hasDeadline = deadlineDates.has(ds);
     const hasTodo = todoDates.has(ds);
     const dow = (startDow + d - 1) % 7;
-    let bg = "transparent", color = "rgba(255,255,255,.8)", weight = "400";
-    if (dow === 0) color = "#FCA5A5";
-    if (dow === 6) color = "#93C5FD";
-    if (isSel) { bg = "rgba(96,165,250,.4)"; color = "#fff"; weight = "700"; }
-    else if (isToday) { bg = "rgba(96,165,250,.25)"; color = "#fff"; weight = "700"; }
-    else if (isForum) { bg = "rgba(251,191,36,.3)"; color = "#fbbf24"; weight = "700"; }
+    let bg = "transparent", color = "#475569", weight = "400";
+    if (dow === 0) color = "#dc2626";
+    if (dow === 6) color = "#1B4FA0";
+    if (isSel) { bg = "#1B4FA0"; color = "#fff"; weight = "700"; }
+    else if (isToday) { bg = "#DBEAFE"; color = "#1B4FA0"; weight = "700"; }
+    else if (isForum) { bg = "#FEF3C7"; color = "#92400e"; weight = "700"; }
     const dot = hasDeadline ? '<div style="position:absolute;bottom:1px;left:50%;transform:translateX(-50%);width:3px;height:3px;border-radius:50%;background:#ef4444;"></div>'
-              : hasTodo ? '<div style="position:absolute;bottom:1px;left:50%;transform:translateX(-50%);width:3px;height:3px;border-radius:50%;background:#34D399;"></div>' : "";
+              : hasTodo ? '<div style="position:absolute;bottom:1px;left:50%;transform:translateX(-50%);width:3px;height:3px;border-radius:50%;background:#16a34a;"></div>' : "";
     html += `<div onclick="selectCalDate('${ds}')" style="position:relative;padding:4px 0;border-radius:5px;cursor:pointer;background:${bg};color:${color};font-weight:${weight};font-size:10px;">${d}${dot}</div>`;
   }
   html += `</div>`;
@@ -1040,14 +1040,14 @@ function pageTodo() {
       <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;">
         <div style="font-size:36px;font-weight:900;line-height:1;letter-spacing:-2px;">${mo}월 ${d}일</div>
         <div style="font-size:14px;opacity:.7;">(${dowKr})</div>
-        <div style="font-size:12px;background:rgba(255,255,255,.15);padding:3px 10px;border-radius:12px;">${dLabel}</div>
+        <div style="font-size:12px;background:#F1F5F9;border:1px solid #CBD5E1;color:#0B1D3F;padding:3px 10px;border-radius:12px;">${dLabel}</div>
       </div>
       <div style="font-size:11px;opacity:.5;margin-top:6px;">${todos.length}개 항목 · ${doneCnt}개 완료 (${progress}%)</div>
     </div>
     <div style="display:flex;gap:6px;">
-      <button onclick="todoChangeDate(-1)" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);color:#fff;border-radius:8px;padding:8px 12px;cursor:pointer;font-size:13px;">◀ 어제</button>
-      <button onclick="todoToday()" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);color:#fff;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px;">오늘</button>
-      <button onclick="todoChangeDate(1)" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);color:#fff;border-radius:8px;padding:8px 12px;cursor:pointer;font-size:13px;">내일 ▶</button>
+      <button onclick="todoChangeDate(-1)" style="background:#F1F5F9;border:1px solid #CBD5E1;color:#0B1D3F;border-radius:8px;padding:8px 12px;cursor:pointer;font-size:13px;">◀ 어제</button>
+      <button onclick="todoToday()" style="background:#1B4FA0;border:1px solid #1B4FA0;color:#fff;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px;font-weight:700;">오늘</button>
+      <button onclick="todoChangeDate(1)" style="background:#F1F5F9;border:1px solid #CBD5E1;color:#0B1D3F;border-radius:8px;padding:8px 12px;cursor:pointer;font-size:13px;">내일 ▶</button>
     </div>
   </div>
 
@@ -1315,7 +1315,7 @@ function pageHome() {
     <div style="text-align:right;">
       <div style="font-size:13px;opacity:.45;margin-bottom:7px;">KDCA · IVI · EuBiologics · RIGHT Foundation</div>
       <div style="display:flex;gap:6px;justify-content:flex-end;margin-bottom:7px;">
-        ${[{l:"연사",v:SP.length+"명"},{l:"예상참석",v:"200명"},{l:"세션",v:"4개"},{l:"시간",v:"8.5h"}].map(({l,v})=>`<div style="background:rgba(255,255,255,.12);border-radius:7px;padding:5px 10px;text-align:center;"><div style="font-size:12px;opacity:.5;">${l}</div><div style="font-size:14px;font-weight:700;">${v}</div></div>`).join("")}
+        ${[{l:"연사",v:SP.length+"명"},{l:"예상참석",v:"200명"},{l:"세션",v:"4개"},{l:"시간",v:"8.5h"}].map(({l,v})=>`<div style="background:#F1F5F9;border:1px solid #E2E8F0;border-radius:7px;padding:5px 10px;text-align:center;"><div style="font-size:12px;color:#64748b;">${l}</div><div style="font-size:14px;font-weight:700;color:#0B1D3F;">${v}</div></div>`).join("")}
       </div>
       ${savedAt?`<div style="font-size:9px;opacity:.45;">💾 저장: ${savedAt}</div>`:""}
     </div>
@@ -1346,11 +1346,11 @@ function pageHome() {
 
 const DEFAULT_AGENDA_HTML = `
 <div class="ag-header">
-  <div style="font-size:11px;color:rgba(255,255,255,.7);font-weight:700;letter-spacing:.08em;margin-bottom:4px;">KDCA · IVI · EuBiologics · RIGHT Foundation</div>
-  <div style="font-size:20px;font-weight:900;color:#fff;margin-bottom:4px;">2026 Global Vaccine Forum</div>
-  <div style="font-size:12px;color:rgba(255,255,255,.8);font-style:italic;margin-bottom:6px;">Strategic Partnerships for Next-Generation Vaccines: Bridging Gaps in R&amp;D, Regulation, and Global Access</div>
-  <div style="font-size:12px;color:rgba(255,255,255,.7);">📅 25 June 2026 &nbsp;·&nbsp; 🏛 Royal Hall (3F), Peace &amp; Park Convention, Seoul</div>
-  <div style="font-size:11px;color:rgba(255,255,255,.5);margin-top:3px;">Moderator: TBC, IVI</div>
+  <div style="font-size:11px;color:#64748b;font-weight:700;letter-spacing:.08em;margin-bottom:4px;">KDCA · IVI · EuBiologics · RIGHT Foundation</div>
+  <div style="font-size:20px;font-weight:900;color:#0B1D3F;margin-bottom:4px;">2026 Global Vaccine Forum</div>
+  <div style="font-size:12px;color:#475569;font-style:italic;margin-bottom:6px;">Strategic Partnerships for Next-Generation Vaccines: Bridging Gaps in R&amp;D, Regulation, and Global Access</div>
+  <div style="font-size:12px;color:#64748b;">📅 25 June 2026 &nbsp;·&nbsp; 🏛 Royal Hall (3F), Peace &amp; Park Convention, Seoul</div>
+  <div style="font-size:11px;color:#94a3b8;margin-top:3px;">Moderator: TBC, IVI</div>
 </div>
 <div class="ag-row special"><span class="ag-time">09:30–10:00</span><span class="ag-prog">REGISTRATION</span><span class="ag-spk"></span></div>
 <div class="ag-section-label">Opening Session</div>
@@ -1834,15 +1834,40 @@ function pageAgenda() {
     scheduleSave();
   }
 
-  // 전체 연사 수 집계 (Agenda에 등장)
-  let totalAgSpeakers = 0;
+  // 전체 연사 수 집계 (Agenda에 등장 — 발표자 + 좌장 모두 포함, 중복 제거)
+  const uniqueSpeakerKeys = new Set();
   AGENDA_ROWS.forEach(r => {
-    if (r.type === "row" && r.speakers) totalAgSpeakers += r.speakers.length;
+    // 1) 발표자 (row 안의 speakers)
+    if (r.type === "row" && r.speakers) {
+      r.speakers.forEach(sp => {
+        const key = sp.spId || (sp.name ? normalizeSpName(sp.name) : null);
+        if (key) uniqueSpeakerKeys.add(key);
+      });
+    }
+    // 2) 섹션 좌장 (section.chair)
+    if (r.type === "section" && r.chair) {
+      const chairs = parseChairNames(r.chair);
+      chairs.forEach(name => {
+        if (name) uniqueSpeakerKeys.add(normalizeSpName(name));
+      });
+    }
   });
-  const boundCount = totalAgSpeakers - orphans.length;
+  const totalAgSpeakers = uniqueSpeakerKeys.size;
+  // orphans도 이름 기준으로 중복 제거
+  const uniqueOrphanNames = new Set();
+  const uniqueOrphans = [];
+  orphans.forEach(o => {
+    const norm = normalizeSpName(o.name || "");
+    if (!uniqueOrphanNames.has(norm)) {
+      uniqueOrphanNames.add(norm);
+      uniqueOrphans.push(o);
+    }
+  });
+  const orphanUniqueCount = uniqueOrphans.length;
+  const boundCount = totalAgSpeakers - orphanUniqueCount;
 
-  console.log(`[Agenda 정합성] 전체 연사: ${totalAgSpeakers}, LOP 매칭: ${boundCount}, 미등록: ${orphans.length}`);
-  if (orphans.length > 0) console.log("[미등록 연사]", orphans.map(o=>o.name));
+  console.log(`[Agenda 정합성] 고유 연사: ${totalAgSpeakers}, LOP 매칭: ${boundCount}, 미등록(중복제거): ${orphanUniqueCount}`);
+  if (uniqueOrphans.length > 0) console.log("[미등록 연사]", uniqueOrphans.map(o=>o.name));
 
   const updatedAt = AGENDA_META.updatedAt || "";
   const fileName  = AGENDA_META.fileName  || "기본 Agenda (05.07.2026)";
@@ -1865,14 +1890,14 @@ function pageAgenda() {
     </label>
     <button onclick="syncAgendaToSP(false)" style="padding:7px 14px;border-radius:20px;font-size:12px;font-weight:600;background:#DBEAFE;color:#1B4FA0;border:1px solid #BFDBFE;cursor:pointer;white-space:nowrap;" title="Agenda 연사를 참석자 관리에 추가/업데이트 (덮어쓰지 않음)">🔄 참석자 관리 동기화</button>
   </div>
-  ${orphans.length > 0 ? `
+  ${uniqueOrphans.length > 0 ? `
   <div class="card" style="padding:12px 16px;margin-bottom:14px;background:linear-gradient(135deg,#FEF2F2,#FFFBEB);border-left:4px solid #f59e0b;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px;">
-      <div style="font-size:13px;font-weight:800;color:#92400e;">⚠️ LOP에 등록되지 않은 연사 ${orphans.length}명 발견 <span style="font-weight:600;color:#64748b;font-size:11px;">(전체 ${totalAgSpeakers}명 중)</span></div>
+      <div style="font-size:13px;font-weight:800;color:#92400e;">⚠️ LOP에 등록되지 않은 연사 ${uniqueOrphans.length}명 발견 <span style="font-weight:600;color:#64748b;font-size:11px;">(전체 ${totalAgSpeakers}명 중)</span></div>
       <button onclick="addAllOrphansToSp()" style="padding:5px 12px;border-radius:14px;font-size:11px;font-weight:700;background:#16a34a;color:#fff;border:none;cursor:pointer;">＋ 모두 LOP에 추가</button>
     </div>
     <div style="display:flex;flex-wrap:wrap;gap:6px;">
-      ${orphans.map(o => `
+      ${uniqueOrphans.map(o => `
         <div style="display:inline-flex;align-items:center;gap:6px;background:#fff;padding:5px 9px;border-radius:6px;border:1px solid #FDE68A;font-size:11px;">
           <span style="font-weight:700;color:#0B1D3F;">${esc(o.name)}</span>
           ${o.sub?`<span style="color:#94a3b8;">(${esc(o.sub.slice(0,30))})</span>`:""}
@@ -1892,7 +1917,7 @@ function pageAgenda() {
   <div id="agenda-loading" style="display:none;text-align:center;padding:30px;color:#1B4FA0;font-weight:600;">⏳ Agenda 파일 분석 중...</div>
   <div class="card" style="padding:0;overflow:hidden;">
     <style>
-      .ag-header{padding:20px 22px 16px;background:linear-gradient(135deg,#071428,#1B4FA0 60%,#3B82F6);color:#fff;}
+      .ag-header{padding:20px 22px 16px;background:#fff;color:#0B1D3F;border-bottom:1px solid #E2E8F0;}
       .ag-section-label{padding:7px 22px;background:#EFF6FF;color:#1B4FA0;font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;border-left:4px solid #1B4FA0;border-top:1px solid #DBEAFE;border-bottom:1px solid #DBEAFE;display:flex;align-items:center;justify-content:space-between;gap:8px;}
       .ag-row{display:grid;grid-template-columns:105px 1fr 200px;border-bottom:1px solid #F1F5F9;transition:background .1s;position:relative;}
       .ag-row:hover{background:#FAFBFF;}
@@ -2251,11 +2276,11 @@ function buildAgendaView(html, fileName) {
 
   const timeRe = /^\s*\d{1,2}\s*[:\.]\s*\d{2}/;
   let out = `<div class="ag-header">
-    <div style="font-size:11px;color:rgba(255,255,255,.7);font-weight:700;letter-spacing:.08em;margin-bottom:4px;">KDCA · IVI · EuBiologics · RIGHT Foundation</div>
-    <div style="font-size:20px;font-weight:900;color:#fff;margin-bottom:4px;">2026 Global Vaccine Forum</div>
-    <div style="font-size:12px;color:rgba(255,255,255,.8);font-style:italic;margin-bottom:6px;">Strategic Partnerships for Next-Generation Vaccines</div>
-    <div style="font-size:12px;color:rgba(255,255,255,.7);">📅 25 June 2026 &nbsp;·&nbsp; 🏛 Royal Hall (3F), Peace &amp; Park Convention, Seoul</div>
-    <div style="font-size:10px;color:rgba(255,255,255,.4);margin-top:6px;">업데이트: ${esc(fileName)}</div>
+    <div style="font-size:11px;color:#64748b;font-weight:700;letter-spacing:.08em;margin-bottom:4px;">KDCA · IVI · EuBiologics · RIGHT Foundation</div>
+    <div style="font-size:20px;font-weight:900;color:#0B1D3F;margin-bottom:4px;">2026 Global Vaccine Forum</div>
+    <div style="font-size:12px;color:#475569;font-style:italic;margin-bottom:6px;">Strategic Partnerships for Next-Generation Vaccines</div>
+    <div style="font-size:12px;color:#64748b;">📅 25 June 2026 &nbsp;·&nbsp; 🏛 Royal Hall (3F), Peace &amp; Park Convention, Seoul</div>
+    <div style="font-size:10px;color:#94a3b8;margin-top:6px;">업데이트: ${esc(fileName)}</div>
   </div>`;
 
   // 텍스트 추출 헬퍼: 분리된 DOM에서도 안정적
