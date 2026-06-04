@@ -922,7 +922,7 @@ function dtag(deadline) {
 function calcUrgCnt() {
   return calcUrgentItems().length;
 }
-// 긴급 처리 대상 항목 목록 (미완료 + 마감일 있음 + 0~7일 이내, 지난 마감 포함)
+// 긴급 처리 대상 항목 목록 (미완료 + 마감일 있음 + 0~3일 이내, 지난 마감 포함)
 function calcUrgentItems() {
   const today = new Date(); today.setHours(0,0,0,0);
   return CL.filter(t=>{
@@ -931,7 +931,7 @@ function calcUrgentItems() {
     const [y,mo,d] = t.deadline.split('-').map(Number);
     const due = new Date(y, mo-1, d);
     const diff = Math.round((due - today) / 86400000);
-    return diff <= 7; // 지난 마감(음수) + 7일 이내
+    return diff <= 3; // 지난 마감(음수) + 3일 이내
   });
 }
 // 디버깅용: 콘솔에서 긴급 항목 확인
@@ -970,7 +970,7 @@ window.showUrgentItemsView = () => {
       <div style="padding:14px 18px;border-bottom:1px solid #E2E8F0;display:flex;justify-content:space-between;align-items:center;background:#FEF2F2;">
         <div>
           <div style="font-size:15px;font-weight:800;color:#dc2626;">🚨 긴급 처리 항목 ${items.length}건</div>
-          <div style="font-size:11px;color:#92400e;margin-top:2px;">미완료 + 마감일 7일 이내 (지난 마감 포함)</div>
+          <div style="font-size:11px;color:#92400e;margin-top:2px;">미완료 + 마감일 3일 이내 (지난 마감 포함)</div>
         </div>
         <button onclick="closeUrgentModal()" style="background:none;border:none;cursor:pointer;font-size:20px;color:#94a3b8;">×</button>
       </div>
@@ -1250,7 +1250,7 @@ function pageHome() {
   const urg=CL.filter(t=>{
     if(t.done||!t.deadline) return false;
     const [y,mo,d]=t.deadline.split('-').map(Number);
-    return Math.round((new Date(y,mo-1,d)-today0)/86400000)<=7;
+    return Math.round((new Date(y,mo-1,d)-today0)/86400000)<=3;
   });
   const catSt=CATS.map(cat=>{const it=CL.filter(t=>t.cat===cat),d=it.filter(t=>t.done).length;return{cat,d,t:it.length,p:pct(d,it.length)};});
 
@@ -3992,7 +3992,7 @@ function pageExport() {
   const urg=CL.filter(t=>{
     if(t.done||!t.deadline) return false;
     const [y,mo,d]=t.deadline.split('-').map(Number);
-    return Math.round((new Date(y,mo-1,d)-today0)/86400000)<=7;
+    return Math.round((new Date(y,mo-1,d)-today0)/86400000)<=3;
   });
   const hasFb = !!db;
   return `
