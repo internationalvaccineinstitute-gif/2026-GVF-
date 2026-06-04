@@ -2722,7 +2722,7 @@ function pageSpeakers() {
   const tabBar = `
   <div style="display:flex;gap:4px;margin-bottom:16px;background:#F1F5F9;border-radius:12px;padding:4px;">
     <button onclick="window._spTab='speakers';window._spSelectedId=null;draw()" style="flex:1;padding:9px 0;border-radius:9px;border:none;cursor:pointer;font-size:14px;font-weight:700;background:${tab==='speakers'?'#fff':'transparent'};color:${tab==='speakers'?'#1B4FA0':'#64748b'};box-shadow:${tab==='speakers'?'0 1px 6px rgba(0,0,0,.1)':'none'};">🎤 연사 (${SP.length}명)</button>
-    <button onclick="window._spTab='attendees';window._spSelectedId=null;draw()" style="flex:1;padding:9px 0;border-radius:9px;border:none;cursor:pointer;font-size:14px;font-weight:700;background:${tab==='attendees'?'#fff':'transparent'};color:${tab==='attendees'?'#1B4FA0':'#64748b'};box-shadow:${tab==='attendees'?'0 1px 6px rgba(0,0,0,.1)':'none'};">👥 일반 참가자</button>
+    <button onclick="window._spTab='attendees';window._spSelectedId=null;draw()" style="flex:1;padding:9px 0;border-radius:9px;border:none;cursor:pointer;font-size:14px;font-weight:700;background:${tab==='attendees'?'#fff':'transparent'};color:${tab==='attendees'?'#1B4FA0':'#64748b'};box-shadow:${tab==='attendees'?'0 1px 6px rgba(0,0,0,.1)':'none'};">👥 일반 참가자 (${ATTENDEES.length}명)</button>
   </div>`;
   if (tab === "attendees") {
     const cfg = ATTENDEES_CONFIG;
@@ -2736,7 +2736,6 @@ function pageSpeakers() {
     <!-- 통계 카드 -->
     <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
       ${[
-        {l:"전체 참가자",v:ATTENDEES.length,c:"#1B4FA0",bg:"#EFF6FF"},
         {l:"🏢 On-site",v:onsiteCount,c:"#0d9488",bg:"#F0FDFA"},
         {l:"💻 Virtual",v:virtualCount,c:"#7c3aed",bg:"#F5F3FF"}
       ].map(({l,v,c,bg})=>`<div style="background:${bg};border-radius:9px;padding:10px 16px;display:flex;align-items:center;gap:8px;box-shadow:0 1px 4px rgba(0,0,0,.06);"><span style="font-size:22px;font-weight:800;color:${c};">${v}</span><span style="font-size:12px;font-weight:600;color:${c};">${l}</span></div>`).join("")}
