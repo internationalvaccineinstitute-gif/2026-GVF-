@@ -134,10 +134,6 @@ aside.open{transform:translateX(0);}
 table{font-size:11px;}
 th,td{padding:6px 8px !important;}
 .sp-card{gap:8px;}
-.ag-row{grid-template-columns:80px 1fr !important;}
-.ag-spk{display:none !important;}
-.ag-time{font-size:11px !important;padding:8px 8px !important;}
-.ag-prog{font-size:12px !important;padding:8px 10px !important;}
 #bottom-nav{display:block;}
 .kpi{padding:7px 12px;}
 input[type=text],textarea{font-size:16px !important;}
@@ -1937,6 +1933,15 @@ function pageAgenda() {
       .ag-edit-form input,.ag-edit-form textarea{padding:6px 10px;border-radius:7px;border:1.5px solid #BFDBFE;font-size:13px;outline:none;width:100%;font-family:inherit;}
       .ag-edit-form label{font-size:11px;color:#64748b;font-weight:700;display:block;margin-bottom:3px;}
       .ag-row-edit{padding:8px;background:#FAFCFF;border:2px solid #BFDBFE;border-radius:8px;margin:4px 0;}
+      @media(max-width:768px){
+        .ag-row{grid-template-columns:80px 1fr !important;}
+        .ag-time{padding:10px 10px;font-size:11px;}
+        .ag-prog{padding:10px 12px;border-right:none;}
+        .ag-spk{grid-column:2 / span 1;padding:0 12px 10px;font-size:11px;border-top:1px dashed #F1F5F9;padding-top:7px;margin-top:0;}
+        .ag-spk:empty{display:none;}
+        .ag-header{padding:14px 16px 12px;}
+        .ag-section-label{padding:6px 14px;font-size:10px;}
+      }
     </style>
     <div id="agenda-body">${renderAgendaRows(editMode)}</div>
     ${editMode ? `<div style="padding:12px 16px;background:#F0FDF4;border-top:1px solid #BBF7D0;text-align:center;">
