@@ -2550,17 +2550,15 @@ function pageChecklist() {
     </div>
     ${pctBar(p,2)}`;
     if (isOpen) {
-      // 카테고리별 정렬 모드 (기본: 원본 순서)
-      const sortKey = catSorts[cat] || "default";
-      let sortedIts = its;
-      if (sortKey !== "default") {
-        sortedIts = [...its].sort((a,b) => {
-          if (!a.deadline && !b.deadline) return 0;
-          if (!a.deadline) return 1;
-          if (!b.deadline) return -1;
-          return sortKey === "asc" ? a.deadline.localeCompare(b.deadline) : b.deadline.localeCompare(a.deadline);
-        });
-      }
+      // 카테고리별 정렬 모드 (기본: 빠른순 - 마감일 임박 우선)
+      const sortKey = catSorts[cat] || "asc";
+      let sortedIts = [...its].sort((a,b) => {
+        if (!a.deadline && !b.deadline) return 0;
+        if (!a.deadline) return 1;  // 마감일 없는 건 뒤로
+        if (!b.deadline) return -1;
+        if (sortKey === "default") return 0;
+        return sortKey === "asc" ? a.deadline.localeCompare(b.deadline) : b.deadline.localeCompare(a.deadline);
+      });
       html += `<div style="margin-top:6px;">
         <div style="display:flex;align-items:center;gap:6px;padding:6px 4px;margin-bottom:4px;flex-wrap:wrap;">
           <span style="font-size:11px;color:#94a3b8;font-weight:600;">정렬:</span>
