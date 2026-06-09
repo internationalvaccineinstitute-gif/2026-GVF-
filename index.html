@@ -435,6 +435,13 @@ const DEFAULT_SIDEBAR_MENU = [
     {icon:"👥", label:"참석자 관리", page:"speakers"},
     {icon:"📊", label:"예산 관리", page:"budget"},
   ]},
+  {group: "Materials", items: [
+    {icon:"📖", label:"Abstract Book", page:"mat_abstract"},
+    {icon:"🖼", label:"PPT Slides", page:"mat_ppt"},
+    {icon:"🎨", label:"Designs", page:"mat_designs"},
+    {icon:"🪪", label:"Name Tag", page:"mat_nametag"},
+    {icon:"🪧", label:"Table Tent", page:"mat_tabletent"},
+  ]},
   {group: "도구", items: [
     {icon:"✨", label:"AI Magic Box", page:"magic"},
     {icon:"📎", label:"파일 보관함", page:"files"},
@@ -499,6 +506,51 @@ function initFirebase(cfg) {
       if (d.atc && typeof d.atc === "object") ATTENDEES_CONFIG = {...ATTENDEES_CONFIG, ...d.atc};
       if (d.dt && typeof d.dt === "object") DAILY_TODOS = d.dt;
       if (d.sm && Array.isArray(d.sm))       SIDEBAR_MENU = d.sm;
+      // Materials 마이그레이션: 메인 메뉴 안의 mat_* 항목을 별도 Materials 그룹으로 이동
+      const matPageSet = new Set(["mat_abstract","mat_ppt","mat_designs","mat_nametag","mat_tabletent"]);
+      const main = SIDEBAR_MENU.find(g => g.group === "메인 메뉴");
+      const inMainMatItems = main ? main.items.filter(i => matPageSet.has(i.page)) : [];
+      if (inMainMatItems.length > 0) {
+        // 메인 메뉴에서 제거
+        main.items = main.items.filter(i => !matPageSet.has(i.page));
+      }
+      // Materials 그룹 보장
+      let matGroup = SIDEBAR_MENU.find(g => g.group === "Materials");
+      if (!matGroup) {
+        matGroup = {group: "Materials", items: []};
+        const toolIdx = SIDEBAR_MENU.findIndex(g => g.group === "도구");
+        if (toolIdx >= 0) SIDEBAR_MENU.splice(toolIdx, 0, matGroup);
+        else SIDEBAR_MENU.push(matGroup);
+      }
+      // 메인에서 옮긴 항목을 Materials 그룹 앞쪽에 추가 (중복 제거)
+      inMainMatItems.forEach(item => {
+        if (!matGroup.items.some(i => i.page === item.page)) matGroup.items.unshift(item);
+      });
+      // 빠진 기본 항목 자동 보충 (순서 보장)
+      const defaultMat = [
+        {icon:"📖", label:"Abstract Book", page:"mat_abstract"},
+        {icon:"🖼", label:"PPT Slides", page:"mat_ppt"},
+        {icon:"🎨", label:"Designs", page:"mat_designs"},
+        {icon:"🪪", label:"Name Tag", page:"mat_nametag"},
+        {icon:"🪧", label:"Table Tent", page:"mat_tabletent"}
+      ];
+      defaultMat.forEach((def, idx) => {
+        if (!matGroup.items.some(i => i.page === def.page)) {
+          matGroup.items.splice(idx, 0, def);
+        }
+      });
+      // Materials 그룹 내 순서 정규화 (defaultMat 순서대로)
+      matGroup.items.sort((a, b) => {
+        const ai = defaultMat.findIndex(d => d.page === a.page);
+        const bi = defaultMat.findIndex(d => d.page === b.page);
+        if (ai === -1 && bi === -1) return 0;
+        if (ai === -1) return 1;
+        if (bi === -1) return -1;
+        return ai - bi;
+      });
+      if (d.mt && typeof d.mt === "object")   window.MATERIALS = d.mt;
+      if (d.mts && typeof d.mts === "object")  window.MATERIALS_BY_SPEAKER = d.mts;
+      if (d.mti && typeof d.mti === "object")  window.MATERIALS_BY_ITEM = d.mti;
       if (d.ms && Array.isArray(d.ms))       MILESTONES = d.ms;
       // Firestore에서 사이드바 메뉴를 받았다면 현재 페이지 제목도 갱신
       const ttlEl = document.getElementById("pg-ttl");
@@ -540,6 +592,9 @@ async function saveToFirestore() {
       atc: ATTENDEES_CONFIG,
       dt: DAILY_TODOS,
       sm: SIDEBAR_MENU,
+      mt: window.MATERIALS || {},
+      mts: window.MATERIALS_BY_SPEAKER || {},
+      mti: window.MATERIALS_BY_ITEM || {},
       ms: MILESTONES,
       agendaHtml: AGENDA_HTML,
       agendaMeta: AGENDA_META,
@@ -870,7 +925,7 @@ function goPage(page) {
 
 // 사이드바 메뉴에서 페이지 이름을 찾되, 없으면 기본값 사용
 function getPageTitle(page) {
-  const fallback = {home:"홈", todo:"📅 To-do List", checklist:"준비 현황", agenda:"Agenda", speakers:"참석자 관리", budget:"예산 관리", magic:"AI Magic Box", files:"파일 보관함", export:"내보내기"};
+  const fallback = {home:"홈", todo:"📅 To-do List", checklist:"준비 현황", agenda:"Agenda", speakers:"참석자 관리", budget:"예산 관리", magic:"AI Magic Box", files:"파일 보관함", export:"내보내기", mat_abstract:"📖 Abstract Book", mat_ppt:"🖼 PPT Slides", mat_designs:"🎨 Designs", mat_nametag:"🪪 Name Tag", mat_tabletent:"🪧 Table Tent"};
   for (const grp of SIDEBAR_MENU) {
     for (const item of grp.items) {
       if (item.page === page) {
@@ -885,7 +940,7 @@ function getPageTitle(page) {
 function draw() {
   const el = document.getElementById("body");
   if (!el) return;
-  const fns = {home:pageHome, todo:pageTodo, checklist:pageChecklist, agenda:pageAgenda, speakers:pageSpeakers, budget:pageBudget, magic:pageMagic, files:pageFiles, export:pageExport};
+  const fns = {home:pageHome, todo:pageTodo, checklist:pageChecklist, agenda:pageAgenda, speakers:pageSpeakers, budget:pageBudget, magic:pageMagic, files:pageFiles, export:pageExport, mat_abstract:pageMatAbstract, mat_ppt:pageMatPpt, mat_designs:pageMatDesigns, mat_nametag:pageMatNametag, mat_tabletent:pageMatTabletent};
   el.innerHTML = (fns[curPage]||pageHome)();
   bindEvents();
   renderSidebarCalendar();
@@ -3937,6 +3992,690 @@ function fileSize(bytes) {
 const FILE_STORE_KEY = "gvf2026_files";
 function getFiles() { try{return JSON.parse(localStorage.getItem(FILE_STORE_KEY)||"[]");}catch{return [];} }
 function saveFiles(files) { localStorage.setItem(FILE_STORE_KEY, JSON.stringify(files)); }
+
+// ═══════════════════════════════════════════════════════════
+//   Materials — 행사 자료 관리 (Abstract Book / Designs / Name Tag / Table Tent)
+// ═══════════════════════════════════════════════════════════
+// MATERIALS 데이터는 ms 옆에 새 키로 저장됨 (mt)
+// {abstract: {status, deadline, owner, notes, files:[{name,url,size,uploadedAt}]}, designs:{...}, ...}
+
+function getMaterials() {
+  if (!window.MATERIALS) {
+    window.MATERIALS = {
+      abstract:  {status:"준비중", deadline:"", owner:"", notes:"", files:[]},
+      designs:   {status:"준비중", deadline:"", owner:"", notes:"", files:[]},
+      nametag:   {status:"준비중", deadline:"", owner:"", notes:"", files:[]},
+      tabletent: {status:"준비중", deadline:"", owner:"", notes:"", files:[]}
+    };
+  }
+  return window.MATERIALS;
+}
+
+function renderMaterialPage(key, title, icon, description) {
+  const M = getMaterials();
+  if (!M[key]) M[key] = {status:"준비중", deadline:"", owner:"", notes:"", files:[]};
+  const m = M[key];
+  const statusColors = {
+    "준비중": {bg:"#FEF3C7", color:"#92400e"},
+    "진행중": {bg:"#DBEAFE", color:"#1B4FA0"},
+    "검토중": {bg:"#F3E8FF", color:"#7c3aed"},
+    "완료":   {bg:"#DCFCE7", color:"#15803d"}
+  };
+  const sc = statusColors[m.status] || statusColors["준비중"];
+
+  return `
+  <div class="card" style="padding:18px 22px;margin-bottom:14px;border-left:4px solid #1B4FA0;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;margin-bottom:10px;">
+      <div>
+        <div style="font-size:20px;font-weight:800;color:#0B1D3F;display:flex;align-items:center;gap:8px;">
+          <span style="font-size:24px;">${icon}</span> ${title}
+        </div>
+        <div style="font-size:12px;color:#64748b;margin-top:3px;">${esc(description)}</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+        <select onchange="updateMaterialField('${key}','status',this.value)" style="padding:6px 11px;border-radius:7px;border:1.5px solid ${sc.bg};background:${sc.bg};color:${sc.color};font-size:12px;font-weight:700;cursor:pointer;outline:none;">
+          ${["준비중","진행중","검토중","완료"].map(s=>`<option value="${s}" ${m.status===s?"selected":""}>${s}</option>`).join("")}
+        </select>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;">
+      <div>
+        <label style="font-size:11px;color:#64748b;font-weight:700;display:block;margin-bottom:3px;">📅 마감일</label>
+        <input type="date" value="${esc(m.deadline||'')}" onchange="updateMaterialField('${key}','deadline',this.value)" style="width:100%;padding:7px 10px;border-radius:7px;border:1.5px solid #BFDBFE;font-size:12px;outline:none;box-sizing:border-box;">
+      </div>
+      <div>
+        <label style="font-size:11px;color:#64748b;font-weight:700;display:block;margin-bottom:3px;">👤 담당자</label>
+        <input type="text" value="${esc(m.owner||'')}" placeholder="이름 입력" onblur="updateMaterialField('${key}','owner',this.value)" style="width:100%;padding:7px 10px;border-radius:7px;border:1.5px solid #BFDBFE;font-size:12px;outline:none;box-sizing:border-box;">
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="padding:14px 18px;margin-bottom:14px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <div style="font-size:14px;font-weight:700;color:#0B1D3F;">📁 첨부 파일 (${(m.files||[]).length})</div>
+      <label style="padding:6px 14px;border-radius:18px;cursor:pointer;font-size:12px;font-weight:700;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;border:none;display:inline-flex;align-items:center;gap:5px;">
+        📎 파일 추가
+        <input type="file" multiple style="display:none;" onchange="uploadMaterialFiles('${key}', event)">
+      </label>
+    </div>
+    ${(m.files||[]).length === 0 ? `
+      <div style="text-align:center;padding:25px;color:#94a3b8;font-size:12px;border:2px dashed #E2E8F0;border-radius:10px;">
+        아직 업로드된 파일이 없습니다<br><span style="font-size:11px;">📎 파일 추가 버튼으로 업로드하세요</span>
+      </div>
+    ` : `
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        ${m.files.map((f,i) => `
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:#FAFBFF;border:1px solid #E2E8F0;border-radius:7px;gap:8px;">
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:12px;font-weight:600;color:#0B1D3F;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">📄 ${esc(f.name)}</div>
+              <div style="font-size:10px;color:#94a3b8;margin-top:2px;">${f.size ? formatFileSize(f.size) : ""} ${f.uploadedAt ? "· " + new Date(f.uploadedAt).toLocaleString("ko-KR") : ""}</div>
+            </div>
+            <div style="display:flex;gap:5px;flex-shrink:0;">
+              ${f.url ? `<a href="${esc(f.url)}" target="_blank" download="${esc(f.name)}" style="padding:4px 9px;border-radius:5px;background:#EFF6FF;color:#1B4FA0;text-decoration:none;font-size:11px;font-weight:600;">⬇ 다운로드</a>` : ""}
+              <button onclick="deleteMaterialFile('${key}',${i})" style="padding:4px 9px;border-radius:5px;background:#FEF2F2;color:#ef4444;border:1px solid #FECACA;cursor:pointer;font-size:11px;font-weight:600;">✕</button>
+            </div>
+          </div>
+        `).join("")}
+      </div>
+    `}
+  </div>
+
+  <div class="card" style="padding:14px 18px;">
+    <div style="font-size:14px;font-weight:700;color:#0B1D3F;margin-bottom:8px;">📝 메모 / 특이사항</div>
+    <textarea onblur="updateMaterialField('${key}','notes',this.value)" placeholder="작업 진행 상황·특이사항·다음 단계 등을 자유롭게 메모하세요" style="width:100%;min-height:120px;padding:10px 12px;border-radius:8px;border:1.5px solid #E2E8F0;font-size:13px;font-family:inherit;outline:none;resize:vertical;box-sizing:border-box;line-height:1.5;">${esc(m.notes||'')}</textarea>
+  </div>`;
+}
+
+function formatFileSize(bytes) {
+  if (!bytes) return "";
+  if (bytes < 1024) return bytes + "B";
+  if (bytes < 1024*1024) return (bytes/1024).toFixed(1) + "KB";
+  return (bytes/1024/1024).toFixed(1) + "MB";
+}
+
+window.updateMaterialField = (key, field, value) => {
+  const M = getMaterials();
+  if (!M[key]) M[key] = {status:"준비중", deadline:"", owner:"", notes:"", files:[]};
+  M[key][field] = value;
+  scheduleSave();
+  if (field === "status") draw(); // 상태는 색상 바뀌므로 다시 그림
+};
+
+window.uploadMaterialFiles = async (key, e) => {
+  const files = Array.from(e.target.files || []);
+  if (files.length === 0) return;
+  const M = getMaterials();
+  if (!M[key]) M[key] = {status:"준비중", deadline:"", owner:"", notes:"", files:[]};
+  if (!M[key].files) M[key].files = [];
+  for (const f of files) {
+    // Base64로 변환해 저장 (5MB 미만 권장)
+    if (f.size > 5 * 1024 * 1024) {
+      if (!confirm(`"${f.name}" 파일이 5MB를 초과합니다 (${formatFileSize(f.size)}).\nFirebase 저장 한도를 고려해 정말 추가하시겠습니까?`)) continue;
+    }
+    try {
+      const dataUrl = await new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result);
+        r.onerror = rej;
+        r.readAsDataURL(f);
+      });
+      M[key].files.push({
+        name: f.name,
+        size: f.size,
+        url: dataUrl,
+        uploadedAt: Date.now()
+      });
+    } catch(err) {
+      console.error("파일 업로드 실패:", err);
+      alert(`"${f.name}" 업로드 실패: ${err.message}`);
+    }
+  }
+  e.target.value = ""; // 같은 파일 재업로드 가능하도록
+  scheduleSave();
+  draw();
+};
+
+window.deleteMaterialFile = (key, idx) => {
+  const M = getMaterials();
+  if (!M[key] || !M[key].files) return;
+  if (!confirm(`"${M[key].files[idx].name}" 파일을 삭제하시겠습니까?`)) return;
+  M[key].files.splice(idx, 1);
+  scheduleSave();
+  draw();
+};
+
+// LOP 페이지와 동일한 정렬 순서를 다른 페이지에서도 쓸 수 있도록 함수 추출
+function getSpeakersSortedByLOP() {
+  // Agenda에 등장하는 순서대로 spId 맵 구성 (ID 우선, 이름 차선)
+  const agendaOrderMap = new Map();
+  const agendaOrderByName = new Map();
+  let agIdx = 0;
+  const rows = (window.AGENDA_ROWS || (typeof parseAgendaToRows === "function" ? parseAgendaToRows(AGENDA_HTML) : []));
+  (rows||[]).forEach(r => {
+    if (r.type === "row" && r.speakers && r.speakers.length > 0) {
+      r.speakers.forEach(sp => {
+        if (sp.spId && !agendaOrderMap.has(sp.spId)) {
+          agendaOrderMap.set(sp.spId, agIdx++);
+        } else if (sp.name && !agendaOrderByName.has(normalizeSpName(sp.name))) {
+          agendaOrderByName.set(normalizeSpName(sp.name), agIdx++);
+        }
+      });
+    }
+  });
+  return [...SP].sort((a, b) => {
+    const aOrd = (a.order !== undefined && a.order !== null) ? a.order : null;
+    const bOrd = (b.order !== undefined && b.order !== null) ? b.order : null;
+    if (aOrd !== null && bOrd !== null) return aOrd - bOrd;
+    if (aOrd !== null) return -1;
+    if (bOrd !== null) return 1;
+    let aIdx = agendaOrderMap.get(a.id);
+    let bIdx = agendaOrderMap.get(b.id);
+    if (aIdx === undefined) aIdx = agendaOrderByName.get(normalizeSpName(a.name));
+    if (bIdx === undefined) bIdx = agendaOrderByName.get(normalizeSpName(b.name));
+    if (aIdx !== undefined && bIdx !== undefined) return aIdx - bIdx;
+    if (aIdx !== undefined) return -1;
+    if (bIdx !== undefined) return 1;
+    return (a.name || "").localeCompare(b.name || "");
+  });
+}
+
+// 좌장(Chair) 인지 판별
+//   1) SP의 role/title에 "chair"/"좌장"/"moderator"/"사회" 포함
+//   2) Agenda section.chair에서 발견된 이름
+function getChairIdSet() {
+  const chairIds = new Set();
+  const chairNorms = new Set();
+  // Agenda section.chair 수집
+  const rows = (window.AGENDA_ROWS || (typeof parseAgendaToRows === "function" ? parseAgendaToRows(AGENDA_HTML) : []));
+  (rows||[]).forEach(r => {
+    if (r.type === "section" && r.chair) {
+      const names = (typeof parseChairNames === "function") ? parseChairNames(r.chair) : [r.chair];
+      names.forEach(n => { if (n) chairNorms.add(normalizeSpName(n)); });
+    }
+  });
+  // SP에서 좌장 식별
+  SP.forEach(s => {
+    const roleStr = ((s.role || "") + " " + (s.title || "")).toLowerCase();
+    if (/chair|좌장|moderator|사회|moderator/i.test(roleStr)) chairIds.add(s.id);
+    if (s.name && chairNorms.has(normalizeSpName(s.name))) chairIds.add(s.id);
+  });
+  return chairIds;
+}
+
+// 좌장 제외 + LOP 순서로 정렬
+function getSpeakersExcludingChairs() {
+  const chairIds = getChairIdSet();
+  return getSpeakersSortedByLOP().filter(s => !chairIds.has(s.id));
+}
+
+// 추가 수동 제외 명단으로 필터링 (이름의 일부 토큰 매칭)
+function filterOutByNameTokens(speakers, excludeTokens) {
+  if (!excludeTokens || excludeTokens.length === 0) return speakers;
+  const norms = excludeTokens.map(t => normalizeSpName(String(t)));
+  return speakers.filter(s => {
+    const fullNorm = normalizeSpName(s.name || "");
+    // 전체이름 정규화 문자열에 제외 토큰 정규화가 부분 포함되면 제외
+    return !norms.some(t => t && fullNorm.includes(t));
+  });
+}
+
+// ─────────── 연사별 자료 수집 페이지 (LOP 연사 카드 구조 차용) ───────────
+// MATERIALS_BY_SPEAKER 데이터 구조:
+//   window.MATERIALS_BY_SPEAKER = {
+//     abstract: { [spId]: { collected:bool, files:[], notes:"" } },
+//     designs:  { ... }
+//   }
+function getMaterialsBySp() {
+  if (!window.MATERIALS_BY_SPEAKER) window.MATERIALS_BY_SPEAKER = {};
+  return window.MATERIALS_BY_SPEAKER;
+}
+function getSpeakerMaterial(matKey, spId) {
+  const all = getMaterialsBySp();
+  if (!all[matKey]) all[matKey] = {};
+  if (!all[matKey][spId]) all[matKey][spId] = {collected:false, files:[], notes:""};
+  return all[matKey][spId];
+}
+
+function renderMaterialBySpeaker(matKey, title, icon, description, opts = {}) {
+  const excludeChairs = opts.excludeChairs === true;
+  const excludeNames = Array.isArray(opts.excludeNames) ? opts.excludeNames : [];
+  const includeNames = Array.isArray(opts.includeNames) ? opts.includeNames : [];
+  // duplicateAfter: [{after:"이름토큰", name:"복제명토큰", suffix:"표시 접미"}]
+  const duplicateAfter = Array.isArray(opts.duplicateAfter) ? opts.duplicateAfter : [];
+  const all = getMaterialsBySp();
+  const matData = all[matKey] || {};
+
+  // includeNames 우선: 좌장으로 분류돼 있어도 강제로 포함
+  const includeNorms = includeNames.map(t => normalizeSpName(String(t)));
+  const isIncluded = (sp) => {
+    const fullNorm = normalizeSpName(sp.name || "");
+    return includeNorms.some(t => t && fullNorm.includes(t));
+  };
+
+  // LOP 동일 정렬 사용
+  let sortedSP;
+  if (excludeChairs) {
+    const chairIds = getChairIdSet();
+    SP.forEach(s => { if (isIncluded(s)) chairIds.delete(s.id); });
+    sortedSP = getSpeakersSortedByLOP().filter(s => !chairIds.has(s.id));
+  } else {
+    sortedSP = getSpeakersSortedByLOP();
+  }
+  // 추가 수동 제외 (단, includeNames에 있으면 제외하지 않음)
+  if (excludeNames.length > 0) {
+    sortedSP = sortedSP.filter(s => {
+      if (isIncluded(s)) return true;
+      const fullNorm = normalizeSpName(s.name || "");
+      return !excludeNames.some(t => {
+        const tn = normalizeSpName(String(t));
+        return tn && fullNorm.includes(tn);
+      });
+    });
+  }
+  // duplicateAfter: 특정 사람 뒤에 다른 사람의 복제본을 가상 추가
+  if (duplicateAfter.length > 0) {
+    duplicateAfter.forEach(rule => {
+      const afterNorm = normalizeSpName(rule.after || "");
+      const targetNorm = normalizeSpName(rule.name || "");
+      if (!afterNorm || !targetNorm) return;
+      const target = SP.find(s => normalizeSpName(s.name||"").includes(targetNorm));
+      if (!target) return;
+      const afterIdx = sortedSP.findIndex(s => normalizeSpName(s.name||"").includes(afterNorm));
+      if (afterIdx < 0) return;
+      // 가상 엔트리 (id 다르게 — _dup 접미사) → 자료 데이터 별도 저장
+      const dupId = target.id + "_dup_" + (rule.suffix ? rule.suffix.replace(/\s+/g,"_") : "1");
+      const clone = {...target, id: dupId, _isDuplicate: true, _origId: target.id, _suffix: rule.suffix || ""};
+      sortedSP.splice(afterIdx + 1, 0, clone);
+    });
+  }
+  // 통계
+  const total = sortedSP.length;
+  const collected = sortedSP.filter(s => matData[s.id]?.collected).length;
+  const pending = total - collected;
+  const withFiles = sortedSP.filter(s => (matData[s.id]?.files||[]).length > 0).length;
+  const pctVal = total > 0 ? Math.round(collected / total * 100) : 0;
+
+  // 필터·검색
+  const filter = window._matFilter || "all";
+  const search = (window._matSearch || "").toLowerCase().trim();
+  let filtered = sortedSP;
+  if (filter === "collected") filtered = filtered.filter(s => matData[s.id]?.collected);
+  else if (filter === "pending") filtered = filtered.filter(s => !matData[s.id]?.collected);
+  else if (filter === "hasFiles") filtered = filtered.filter(s => (matData[s.id]?.files||[]).length > 0);
+  if (search) filtered = filtered.filter(s =>
+    (s.name||"").toLowerCase().includes(search) ||
+    (s.org||"").toLowerCase().includes(search) ||
+    (s.email||"").toLowerCase().includes(search)
+  );
+
+  const mkFilterBtn = (val, label) => {
+    const active = filter === val;
+    return `<button onclick="window._matFilter='${val}';draw()" style="padding:5px 11px;border-radius:14px;border:1.5px solid ${active?'#1B4FA0':'#E2E8F0'};background:${active?'#1B4FA0':'#fff'};color:${active?'#fff':'#64748b'};font-size:11px;font-weight:700;cursor:pointer;">${label}</button>`;
+  };
+
+  return `
+  <div class="card" style="padding:14px 18px;margin-bottom:14px;border-left:4px solid #1B4FA0;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;">
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:18px;font-weight:800;color:#0B1D3F;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span style="font-size:22px;">${icon}</span>
+          <span>${title}</span>
+          <span style="font-size:13px;font-weight:700;color:#1B4FA0;background:#EFF6FF;padding:2px 9px;border-radius:99px;">총 ${total}명</span>
+          <span style="font-size:12px;font-weight:700;color:#15803d;background:#DCFCE7;padding:2px 9px;border-radius:99px;">✅ 수집 ${collected}</span>
+          <span style="font-size:12px;font-weight:700;color:#92400e;background:#FEF3C7;padding:2px 9px;border-radius:99px;">⏳ 미수집 ${pending}</span>
+        </div>
+        <div style="font-size:12px;color:#64748b;margin-top:5px;">${esc(description)}</div>
+      </div>
+      <div style="text-align:right;flex-shrink:0;">
+        <div style="font-size:22px;font-weight:800;color:#1B4FA0;">${pctVal}<span style="font-size:13px;">%</span></div>
+        <div style="font-size:10px;color:#64748b;font-weight:600;">진행률</div>
+      </div>
+    </div>
+    <div style="margin-top:10px;height:6px;background:#F1F5F9;border-radius:99px;overflow:hidden;">
+      <div style="height:100%;width:${pctVal}%;background:linear-gradient(90deg,#1B4FA0,#3B82F6);border-radius:99px;transition:width .4s;"></div>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap;">
+    <input type="text" placeholder="🔍 이름·소속·이메일로 검색" value="${esc(window._matSearch||'')}" oninput="window._matSearch=this.value;draw()" style="flex:1;min-width:180px;padding:7px 12px;border-radius:8px;border:1.5px solid #BFDBFE;font-size:13px;outline:none;">
+  </div>
+  <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;">
+    ${mkFilterBtn("all","전체")}
+    ${mkFilterBtn("collected","✅ 수집됨")}
+    ${mkFilterBtn("pending","⏳ 미수집")}
+    ${mkFilterBtn("hasFiles",`📎 파일 있음 (${withFiles})`)}
+    <span style="font-size:11px;color:#64748b;margin-left:auto;align-self:center;">${filtered.length}/${sortedSP.length}명 표시</span>
+  </div>
+
+  ${filtered.length === 0 ? `
+    <div class="card" style="text-align:center;padding:30px;color:#94a3b8;font-size:13px;">조건에 맞는 연사가 없습니다</div>
+  ` : `
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      ${filtered.map((sp, i) => {
+        const d = getSpeakerMaterial(matKey, sp.id);
+        const files = d.files || [];
+        const fullName = sp.name || `연사 #${i+1}`;
+        const dupBadge = sp._isDuplicate
+          ? `<span style="font-size:9px;background:#F5F3FF;color:#7c3aed;padding:1px 6px;border-radius:4px;font-weight:700;">🔁 ${esc(sp._suffix || "추가")}</span>`
+          : "";
+        const isOpen = window._matExpandedId === `${matKey}:${sp.id}`;
+        return `
+        <div class="card" style="padding:0;overflow:hidden;border:1px solid ${d.collected?'#BBF7D0':'#E2E8F0'};margin-bottom:0;">
+          <div style="padding:10px 13px;display:flex;align-items:center;gap:10px;">
+            <input type="checkbox" ${d.collected?"checked":""} onchange="toggleMatCollected('${matKey}','${sp.id}',this.checked)" style="width:20px;height:20px;cursor:pointer;flex-shrink:0;accent-color:#16a34a;">
+            <div onclick="toggleMatCard('${matKey}','${sp.id}')" style="flex:1;min-width:0;cursor:pointer;">
+              <div style="font-size:13px;font-weight:700;color:${d.collected?'#15803d':'#0B1D3F'};display:flex;align-items:center;gap:5px;flex-wrap:wrap;">
+                <span style="text-decoration:${d.collected?'line-through':'none'};opacity:${d.collected?'0.7':'1'};">${esc(fullName)}</span>
+                ${sbadge(sp.status||"pending")}
+                ${dupBadge}
+                ${files.length > 0 ? `<span style="font-size:10px;background:#EFF6FF;color:#1B4FA0;padding:1px 6px;border-radius:4px;font-weight:700;">📎 ${files.length}</span>` : ""}
+              </div>
+              ${(sp.org || sp.title) ? `<div style="font-size:11px;color:#64748b;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${sp.title?esc(sp.title)+(sp.org?" · ":""):""}${esc(sp.org||"")}</div>` : ""}
+              ${sp.email ? `<div style="font-size:10px;color:#94a3b8;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">📧 ${esc(sp.email)}</div>` : ""}
+            </div>
+            <label style="padding:5px 11px;border-radius:14px;cursor:pointer;font-size:11px;font-weight:700;background:#EFF6FF;color:#1B4FA0;border:1px solid #BFDBFE;flex-shrink:0;white-space:nowrap;" title="자료 업로드">
+              📎 첨부
+              <input type="file" multiple style="display:none;" onchange="uploadSpeakerMaterial('${matKey}','${sp.id}',event)">
+            </label>
+            <span onclick="toggleMatCard('${matKey}','${sp.id}')" style="font-size:14px;color:#94a3b8;flex-shrink:0;cursor:pointer;transform:rotate(${isOpen?'90':'0'}deg);transition:transform .15s;">›</span>
+          </div>
+          ${isOpen ? `
+          <div style="padding:11px 13px;background:#F8FAFC;border-top:1px solid #E2E8F0;">
+            ${files.length === 0 ? `
+              <div style="text-align:center;padding:14px;color:#94a3b8;font-size:11px;border:1.5px dashed #E2E8F0;border-radius:7px;margin-bottom:8px;">아직 첨부 파일 없음 — 📎 첨부 버튼으로 업로드</div>
+            ` : `
+              <div style="display:flex;flex-direction:column;gap:5px;margin-bottom:8px;">
+                ${files.map((f,fi) => `
+                  <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 9px;background:#fff;border:1px solid #E2E8F0;border-radius:6px;gap:6px;">
+                    <div style="flex:1;min-width:0;">
+                      <div style="font-size:11px;font-weight:600;color:#0B1D3F;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">📄 ${esc(f.name)}</div>
+                      <div style="font-size:9px;color:#94a3b8;margin-top:1px;">${f.size?formatFileSize(f.size):""} ${f.uploadedAt?"· "+new Date(f.uploadedAt).toLocaleDateString("ko-KR"):""}</div>
+                    </div>
+                    <div style="display:flex;gap:4px;flex-shrink:0;">
+                      ${f.url?`<a href="${esc(f.url)}" target="_blank" download="${esc(f.name)}" style="padding:3px 8px;border-radius:5px;background:#EFF6FF;color:#1B4FA0;text-decoration:none;font-size:10px;font-weight:600;">⬇</a>`:""}
+                      <button onclick="deleteSpeakerMaterialFile('${matKey}','${sp.id}',${fi})" style="padding:3px 8px;border-radius:5px;background:#FEF2F2;color:#ef4444;border:1px solid #FECACA;cursor:pointer;font-size:10px;font-weight:600;">✕</button>
+                    </div>
+                  </div>
+                `).join("")}
+              </div>
+            `}
+            <textarea onblur="updateSpeakerMaterialNotes('${matKey}','${sp.id}',this.value)" placeholder="메모 (선택)" style="width:100%;min-height:50px;padding:7px 9px;border-radius:6px;border:1px solid #E2E8F0;font-size:11px;font-family:inherit;outline:none;resize:vertical;box-sizing:border-box;">${esc(d.notes||'')}</textarea>
+          </div>` : ""}
+        </div>`;
+      }).join("")}
+    </div>
+  `}`;
+}
+
+window.toggleMatCard = (matKey, spId) => {
+  const id = `${matKey}:${spId}`;
+  window._matExpandedId = (window._matExpandedId === id) ? null : id;
+  draw();
+};
+
+window.toggleMatCollected = (matKey, spId, checked) => {
+  const d = getSpeakerMaterial(matKey, spId);
+  d.collected = !!checked;
+  scheduleSave();
+  draw();
+};
+
+window.uploadSpeakerMaterial = async (matKey, spId, e) => {
+  const files = Array.from(e.target.files || []);
+  if (files.length === 0) return;
+  const d = getSpeakerMaterial(matKey, spId);
+  if (!d.files) d.files = [];
+  for (const f of files) {
+    if (f.size > 5 * 1024 * 1024) {
+      if (!confirm(`"${f.name}" 파일이 5MB를 초과합니다 (${formatFileSize(f.size)}).\nFirebase 저장 한도를 고려해 정말 추가하시겠습니까?`)) continue;
+    }
+    try {
+      const dataUrl = await new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result);
+        r.onerror = rej;
+        r.readAsDataURL(f);
+      });
+      d.files.push({name:f.name, size:f.size, url:dataUrl, uploadedAt:Date.now()});
+    } catch(err) {
+      console.error("업로드 실패:", err);
+      alert(`"${f.name}" 업로드 실패: ${err.message}`);
+    }
+  }
+  // 파일이 추가되면 collected=true 자동 체크
+  if (d.files.length > 0) d.collected = true;
+  e.target.value = "";
+  scheduleSave();
+  draw();
+};
+
+window.deleteSpeakerMaterialFile = (matKey, spId, idx) => {
+  const d = getSpeakerMaterial(matKey, spId);
+  if (!d.files) return;
+  if (!confirm(`"${d.files[idx].name}" 파일을 삭제하시겠습니까?`)) return;
+  d.files.splice(idx, 1);
+  scheduleSave();
+  draw();
+};
+
+window.updateSpeakerMaterialNotes = (matKey, spId, value) => {
+  const d = getSpeakerMaterial(matKey, spId);
+  d.notes = value;
+  scheduleSave();
+};
+
+function pageMatAbstract() {
+  return renderMaterialBySpeaker("abstract", "Abstract Book", "📖", "연사별 발표 초록(Abstract) 수집 및 자료집 제작");
+}
+function pageMatPpt() {
+  return renderMaterialBySpeaker("ppt", "PPT Slides", "🖼", "연사별 발표 슬라이드 수집 (좌장·인사말 등 제외)", {
+    excludeChairs: true,
+    excludeNames: ["Jerome", "Lim", "Minwon", "Jae Kyoun", "Hee Soo", "Jae-Hwan"],
+    includeNames: ["Sushant"],
+    duplicateAfter: [
+      {after: "Sushant", name: "Nakorn Premsri", suffix: "S2"}
+    ]
+  });
+}
+// ─────────── 항목별 자료 수집 페이지 (디자인 항목 등) ───────────
+// MATERIALS_BY_ITEM 데이터:
+//   window.MATERIALS_BY_ITEM = {
+//     designs: { led_banner: {collected, files, notes}, ... }
+//   }
+function getMaterialsByItem() {
+  if (!window.MATERIALS_BY_ITEM) window.MATERIALS_BY_ITEM = {};
+  return window.MATERIALS_BY_ITEM;
+}
+function getItemMaterial(matKey, itemId) {
+  const all = getMaterialsByItem();
+  if (!all[matKey]) all[matKey] = {};
+  if (!all[matKey][itemId]) all[matKey][itemId] = {collected:false, files:[], notes:"", deadline:"", owner:""};
+  return all[matKey][itemId];
+}
+
+function renderMaterialByItems(matKey, title, icon, description, items) {
+  const all = getMaterialsByItem();
+  const matData = all[matKey] || {};
+  const total = items.length;
+  const collected = items.filter(it => matData[it.id]?.collected).length;
+  const pending = total - collected;
+  const withFiles = items.filter(it => (matData[it.id]?.files||[]).length > 0).length;
+  const pctVal = total > 0 ? Math.round(collected / total * 100) : 0;
+
+  const filter = window._matItemFilter || "all";
+  const mkFilterBtn = (val, label) => {
+    const active = filter === val;
+    return `<button onclick="window._matItemFilter='${val}';draw()" style="padding:5px 11px;border-radius:14px;border:1.5px solid ${active?'#1B4FA0':'#E2E8F0'};background:${active?'#1B4FA0':'#fff'};color:${active?'#fff':'#64748b'};font-size:11px;font-weight:700;cursor:pointer;">${label}</button>`;
+  };
+  let filtered = items;
+  if (filter === "collected") filtered = filtered.filter(it => matData[it.id]?.collected);
+  else if (filter === "pending") filtered = filtered.filter(it => !matData[it.id]?.collected);
+  else if (filter === "hasFiles") filtered = filtered.filter(it => (matData[it.id]?.files||[]).length > 0);
+
+  return `
+  <div class="card" style="padding:14px 18px;margin-bottom:14px;border-left:4px solid #1B4FA0;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;">
+      <div>
+        <div style="font-size:18px;font-weight:800;color:#0B1D3F;display:flex;align-items:center;gap:8px;">
+          <span style="font-size:22px;">${icon}</span> ${title}
+        </div>
+        <div style="font-size:12px;color:#64748b;margin-top:3px;">${esc(description)}</div>
+      </div>
+      <div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center;">
+        <div style="background:#DCFCE7;border-radius:8px;padding:6px 12px;text-align:center;"><span style="font-size:18px;font-weight:800;color:#15803d;">${collected}</span><span style="font-size:11px;color:#15803d;font-weight:600;margin-left:4px;">수집됨</span></div>
+        <div style="background:#FEF3C7;border-radius:8px;padding:6px 12px;text-align:center;"><span style="font-size:18px;font-weight:800;color:#92400e;">${pending}</span><span style="font-size:11px;color:#92400e;font-weight:600;margin-left:4px;">미수집</span></div>
+        <div style="background:#EFF6FF;border-radius:8px;padding:6px 12px;text-align:center;"><span style="font-size:18px;font-weight:800;color:#1B4FA0;">${pctVal}<span style="font-size:11px;">%</span></span></div>
+      </div>
+    </div>
+    <div style="margin-top:10px;height:6px;background:#F1F5F9;border-radius:99px;overflow:hidden;">
+      <div style="height:100%;width:${pctVal}%;background:linear-gradient(90deg,#1B4FA0,#3B82F6);border-radius:99px;transition:width .4s;"></div>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;">
+    ${mkFilterBtn("all","전체")}
+    ${mkFilterBtn("collected","✅ 수집됨")}
+    ${mkFilterBtn("pending","⏳ 미수집")}
+    ${mkFilterBtn("hasFiles",`📎 파일 있음 (${withFiles})`)}
+    <span style="font-size:11px;color:#64748b;margin-left:auto;align-self:center;">${filtered.length}/${items.length}개 표시</span>
+  </div>
+
+  ${filtered.length === 0 ? `
+    <div class="card" style="text-align:center;padding:30px;color:#94a3b8;font-size:13px;">조건에 맞는 항목이 없습니다</div>
+  ` : `
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      ${filtered.map((it, i) => {
+        const d = getItemMaterial(matKey, it.id);
+        const files = d.files || [];
+        const isOpen = window._matItemExpandedId === `${matKey}:${it.id}`;
+        return `
+        <div class="card" style="padding:0;overflow:hidden;border:1px solid ${d.collected?'#BBF7D0':'#E2E8F0'};margin-bottom:0;">
+          <div style="padding:10px 13px;display:flex;align-items:center;gap:10px;">
+            <input type="checkbox" ${d.collected?"checked":""} onchange="toggleMatItemCollected('${matKey}','${it.id}',this.checked)" style="width:20px;height:20px;cursor:pointer;flex-shrink:0;accent-color:#16a34a;">
+            <div onclick="toggleMatItemCard('${matKey}','${it.id}')" style="flex:1;min-width:0;cursor:pointer;">
+              <div style="font-size:14px;font-weight:700;color:${d.collected?'#15803d':'#0B1D3F'};display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                <span style="font-size:18px;">${it.icon}</span>
+                <span style="text-decoration:${d.collected?'line-through':'none'};opacity:${d.collected?'0.7':'1'};">${esc(it.label)}</span>
+                ${files.length > 0 ? `<span style="font-size:10px;background:#EFF6FF;color:#1B4FA0;padding:1px 6px;border-radius:4px;font-weight:700;">📎 ${files.length}</span>` : ""}
+                ${d.deadline ? `<span style="font-size:10px;background:#FEF3C7;color:#92400e;padding:1px 6px;border-radius:4px;font-weight:700;">📅 ${esc(d.deadline)}</span>` : ""}
+              </div>
+              ${d.owner ? `<div style="font-size:11px;color:#64748b;margin-top:2px;">👤 ${esc(d.owner)}</div>` : ""}
+            </div>
+            <label style="padding:5px 11px;border-radius:14px;cursor:pointer;font-size:11px;font-weight:700;background:#EFF6FF;color:#1B4FA0;border:1px solid #BFDBFE;flex-shrink:0;white-space:nowrap;" title="자료 업로드">
+              📎 첨부
+              <input type="file" multiple style="display:none;" onchange="uploadItemMaterial('${matKey}','${it.id}',event)">
+            </label>
+            <span onclick="toggleMatItemCard('${matKey}','${it.id}')" style="font-size:14px;color:#94a3b8;flex-shrink:0;cursor:pointer;transform:rotate(${isOpen?'90':'0'}deg);transition:transform .15s;">›</span>
+          </div>
+          ${isOpen ? `
+          <div style="padding:11px 13px;background:#F8FAFC;border-top:1px solid #E2E8F0;">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+              <div>
+                <label style="font-size:10px;color:#64748b;font-weight:700;display:block;margin-bottom:3px;">📅 마감일</label>
+                <input type="date" value="${esc(d.deadline||'')}" onchange="updateItemMaterialField('${matKey}','${it.id}','deadline',this.value)" style="width:100%;padding:6px 9px;border-radius:6px;border:1px solid #E2E8F0;font-size:11px;outline:none;box-sizing:border-box;">
+              </div>
+              <div>
+                <label style="font-size:10px;color:#64748b;font-weight:700;display:block;margin-bottom:3px;">👤 담당자</label>
+                <input type="text" value="${esc(d.owner||'')}" placeholder="이름" onblur="updateItemMaterialField('${matKey}','${it.id}','owner',this.value)" style="width:100%;padding:6px 9px;border-radius:6px;border:1px solid #E2E8F0;font-size:11px;outline:none;box-sizing:border-box;">
+              </div>
+            </div>
+            ${files.length === 0 ? `
+              <div style="text-align:center;padding:14px;color:#94a3b8;font-size:11px;border:1.5px dashed #E2E8F0;border-radius:7px;margin-bottom:8px;">아직 첨부 파일 없음 — 📎 첨부 버튼으로 업로드</div>
+            ` : `
+              <div style="display:flex;flex-direction:column;gap:5px;margin-bottom:8px;">
+                ${files.map((f,fi) => `
+                  <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 9px;background:#fff;border:1px solid #E2E8F0;border-radius:6px;gap:6px;">
+                    <div style="flex:1;min-width:0;">
+                      <div style="font-size:11px;font-weight:600;color:#0B1D3F;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">📄 ${esc(f.name)}</div>
+                      <div style="font-size:9px;color:#94a3b8;margin-top:1px;">${f.size?formatFileSize(f.size):""} ${f.uploadedAt?"· "+new Date(f.uploadedAt).toLocaleDateString("ko-KR"):""}</div>
+                    </div>
+                    <div style="display:flex;gap:4px;flex-shrink:0;">
+                      ${f.url?`<a href="${esc(f.url)}" target="_blank" download="${esc(f.name)}" style="padding:3px 8px;border-radius:5px;background:#EFF6FF;color:#1B4FA0;text-decoration:none;font-size:10px;font-weight:600;">⬇</a>`:""}
+                      <button onclick="deleteItemMaterialFile('${matKey}','${it.id}',${fi})" style="padding:3px 8px;border-radius:5px;background:#FEF2F2;color:#ef4444;border:1px solid #FECACA;cursor:pointer;font-size:10px;font-weight:600;">✕</button>
+                    </div>
+                  </div>
+                `).join("")}
+              </div>
+            `}
+            <textarea onblur="updateItemMaterialField('${matKey}','${it.id}','notes',this.value)" placeholder="메모·사양·특이사항" style="width:100%;min-height:50px;padding:7px 9px;border-radius:6px;border:1px solid #E2E8F0;font-size:11px;font-family:inherit;outline:none;resize:vertical;box-sizing:border-box;">${esc(d.notes||'')}</textarea>
+          </div>` : ""}
+        </div>`;
+      }).join("")}
+    </div>
+  `}`;
+}
+
+window.toggleMatItemCard = (matKey, itemId) => {
+  const id = `${matKey}:${itemId}`;
+  window._matItemExpandedId = (window._matItemExpandedId === id) ? null : id;
+  draw();
+};
+window.toggleMatItemCollected = (matKey, itemId, checked) => {
+  const d = getItemMaterial(matKey, itemId);
+  d.collected = !!checked;
+  scheduleSave();
+  draw();
+};
+window.updateItemMaterialField = (matKey, itemId, field, value) => {
+  const d = getItemMaterial(matKey, itemId);
+  d[field] = value;
+  scheduleSave();
+  if (field === "deadline") draw(); // 마감일 배지 갱신
+};
+window.uploadItemMaterial = async (matKey, itemId, e) => {
+  const files = Array.from(e.target.files || []);
+  if (files.length === 0) return;
+  const d = getItemMaterial(matKey, itemId);
+  if (!d.files) d.files = [];
+  for (const f of files) {
+    if (f.size > 5 * 1024 * 1024) {
+      if (!confirm(`"${f.name}" 파일이 5MB를 초과합니다 (${formatFileSize(f.size)}).\nFirebase 저장 한도를 고려해 정말 추가하시겠습니까?`)) continue;
+    }
+    try {
+      const dataUrl = await new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result);
+        r.onerror = rej;
+        r.readAsDataURL(f);
+      });
+      d.files.push({name:f.name, size:f.size, url:dataUrl, uploadedAt:Date.now()});
+    } catch(err) {
+      console.error("업로드 실패:", err);
+      alert(`"${f.name}" 업로드 실패: ${err.message}`);
+    }
+  }
+  if (d.files.length > 0) d.collected = true;
+  e.target.value = "";
+  scheduleSave();
+  draw();
+};
+window.deleteItemMaterialFile = (matKey, itemId, idx) => {
+  const d = getItemMaterial(matKey, itemId);
+  if (!d.files) return;
+  if (!confirm(`"${d.files[idx].name}" 파일을 삭제하시겠습니까?`)) return;
+  d.files.splice(idx, 1);
+  scheduleSave();
+  draw();
+};
+
+function pageMatDesigns() {
+  return renderMaterialByItems("designs", "Designs", "🎨", "행사 디자인 자료 항목별 수집 관리", [
+    {id:"led_banner",   icon:"🖥",  label:"LED 배너"},
+    {id:"led_interlude",icon:"🎬",  label:"LED 간지"},
+    {id:"sticker",      icon:"🏷",  label:"스티커"},
+    {id:"podium",       icon:"🎤",  label:"포디움"},
+    {id:"did_h",        icon:"📺",  label:"DID 가로"},
+    {id:"did_v",        icon:"📱",  label:"DID 세로"},
+    {id:"x_banner",     icon:"🪧",  label:"X-배너"}
+  ]);
+}
+function pageMatNametag() {
+  return renderMaterialPage("nametag", "Name Tag", "🪪", "참가자 명찰 디자인 및 출력");
+}
+function pageMatTabletent() {
+  return renderMaterialPage("tabletent", "Table Tent", "🪧", "좌석 안내 카드 · 테이블 텐트");
+}
 
 function pageFiles() {
   const files = getFiles();
