@@ -550,6 +550,8 @@ function initFirebase(cfg) {
       });
       if (d.mt && typeof d.mt === "object")   window.MATERIALS = d.mt;
       if (d.mts && typeof d.mts === "object")  window.MATERIALS_BY_SPEAKER = d.mts;
+      if (d.mtso && typeof d.mtso === "object") window.MAT_SORT_ORDER = d.mtso;
+      if (d.mtsm && typeof d.mtsm === "object") window.MAT_MANUAL = d.mtsm;
       if (d.mti && typeof d.mti === "object")  window.MATERIALS_BY_ITEM = d.mti;
       if (d.ms && Array.isArray(d.ms))       MILESTONES = d.ms;
       // Firestore에서 사이드바 메뉴를 받았다면 현재 페이지 제목도 갱신
@@ -594,6 +596,8 @@ async function saveToFirestore() {
       sm: SIDEBAR_MENU,
       mt: window.MATERIALS || {},
       mts: window.MATERIALS_BY_SPEAKER || {},
+      mtso: window.MAT_SORT_ORDER || {},
+      mtsm: window.MAT_MANUAL || {},
       mti: window.MATERIALS_BY_ITEM || {},
       ms: MILESTONES,
       agendaHtml: AGENDA_HTML,
@@ -605,11 +609,76 @@ async function saveToFirestore() {
     setTimeout(() => updateSyncPill("idle"), 2000);
     return true;
   } catch(e) {
-    console.error("Firestore 저장 오류:", e.message);
+    console.error("Firestore 저장 오류:", e);
+    window._lastSaveError = {
+      message: e.message || String(e),
+      code: e.code || "unknown",
+      time: new Date().toLocaleString("ko-KR")
+    };
+    // 데이터 크기 진단 정보
+    try {
+      const payloadSize = JSON.stringify({
+        cl:CL.length, sp:SP.length, at:ATTENDEES.length,
+        mtsFiles: countMatFiles(window.MATERIALS_BY_SPEAKER),
+        mtiFiles: countMatFiles(window.MATERIALS_BY_ITEM)
+      });
+      window._lastSaveError.summary = payloadSize;
+      // 추정 크기 계산 (대략)
+      const payload = {
+        cl:CL, sp:SP, bi:BUDGET_ITEMS, td:TRAVEL_DETAIL, be:BUDGET_ENTRIES, dt:DAILY_TODOS,
+        tp:TRAVEL_PAID, at:ATTENDEES, atc:ATTENDEES_CONFIG, sm:SIDEBAR_MENU,
+        mt:window.MATERIALS||{}, mts:window.MATERIALS_BY_SPEAKER||{},
+        mtso:window.MAT_SORT_ORDER||{}, mtsm:window.MAT_MANUAL||{},
+        mti:window.MATERIALS_BY_ITEM||{}, ms:MILESTONES,
+        agendaHtml:AGENDA_HTML, agendaMeta:AGENDA_META
+      };
+      const sizeKB = Math.round(JSON.stringify(payload).length / 1024);
+      window._lastSaveError.sizeKB = sizeKB;
+      console.warn(`[Firestore] 페이로드 크기: ${sizeKB} KB (한도: 1024 KB)`);
+      if (sizeKB > 900) console.error(`⚠️ Firestore 1MB 한도 초과 임박! ${sizeKB}KB`);
+    } catch(_) {}
     updateSyncPill("error");
     return false;
   }
 }
+
+function countMatFiles(obj) {
+  if (!obj || typeof obj !== "object") return 0;
+  let n = 0, sz = 0;
+  for (const k1 in obj) {
+    for (const k2 in (obj[k1]||{})) {
+      const files = obj[k1][k2]?.files || [];
+      n += files.length;
+      files.forEach(f => sz += (f.url?.length || 0));
+    }
+  }
+  return {count:n, sizeKB:Math.round(sz/1024)};
+}
+
+// 저장 오류 배지 클릭 시 상세 진단 표시
+window.showSaveErrorDetails = () => {
+  const e = window._lastSaveError;
+  if (!e) { alert("최근 저장 오류 정보가 없습니다."); return; }
+  const mtsInfo = countMatFiles(window.MATERIALS_BY_SPEAKER);
+  const mtiInfo = countMatFiles(window.MATERIALS_BY_ITEM);
+  alert(
+    `⚠️ Firestore 저장 오류 진단\n\n` +
+    `시각: ${e.time}\n` +
+    `에러: ${e.message}\n` +
+    `코드: ${e.code}\n` +
+    `페이로드 크기: ${e.sizeKB || "?"} KB (Firestore 한도: 1024 KB)\n\n` +
+    `📊 데이터 현황\n` +
+    `- 체크리스트: ${CL.length}개\n` +
+    `- 연사(SP): ${SP.length}명\n` +
+    `- 일반 참가자: ${ATTENDEES.length}명\n` +
+    `- Materials(연사별) 파일: ${mtsInfo.count||0}개 (${mtsInfo.sizeKB||0}KB)\n` +
+    `- Materials(항목별) 파일: ${mtiInfo.count||0}개 (${mtiInfo.sizeKB||0}KB)\n\n` +
+    `💡 해결 방안\n` +
+    `1) Materials 첨부 파일 일부 삭제 (가장 큰 영향)\n` +
+    `2) Agenda HTML 단순화 (📋 Agenda 페이지)\n` +
+    `3) 콘솔(F12)에서 자세한 에러 확인`
+  );
+};
 
 function updateFbStatus(ok) {
   const el = document.getElementById("fb-status-dot");
@@ -647,7 +716,21 @@ function updateSyncPill(state) {
     import: ["📥 가져오기 완료","#0d9488","#CCFBF1"],
   };
   const [lbl,c,bg] = M[state]||["","","transparent"];
-  if(pill){ pill.textContent=lbl; pill.style.color=c; pill.style.background=bg; pill.style.display=lbl?"inline-block":"none"; }
+  if(pill){
+    pill.textContent=lbl;
+    pill.style.color=c;
+    pill.style.background=bg;
+    pill.style.display=lbl?"inline-block":"none";
+    if (state === "error") {
+      pill.style.cursor = "pointer";
+      pill.title = "클릭: 저장 오류 상세 보기";
+      pill.onclick = () => showSaveErrorDetails();
+    } else {
+      pill.style.cursor = "";
+      pill.title = "";
+      pill.onclick = null;
+    }
+  }
   if(sb)  { sb.textContent=lbl; sb.style.color=c; }
 }
 
@@ -4241,10 +4324,14 @@ function renderMaterialBySpeaker(matKey, title, icon, description, opts = {}) {
   const excludeChairs = opts.excludeChairs === true;
   const excludeNames = Array.isArray(opts.excludeNames) ? opts.excludeNames : [];
   const includeNames = Array.isArray(opts.includeNames) ? opts.includeNames : [];
-  // duplicateAfter: [{after:"이름토큰", name:"복제명토큰", suffix:"표시 접미"}]
   const duplicateAfter = Array.isArray(opts.duplicateAfter) ? opts.duplicateAfter : [];
   const all = getMaterialsBySp();
   const matData = all[matKey] || {};
+  if (!window.MAT_SORT_ORDER) window.MAT_SORT_ORDER = {};
+  if (!window.MAT_MANUAL) window.MAT_MANUAL = {};
+  const customOrder = window.MAT_SORT_ORDER[matKey] || []; // id 배열 (수동 정렬 순서)
+  const manualEntries = window.MAT_MANUAL[matKey] || []; // [{id, name, org, title, email}]
+  const editSortMode = window._matEditSort === matKey;
 
   // includeNames 우선: 좌장으로 분류돼 있어도 강제로 포함
   const includeNorms = includeNames.map(t => normalizeSpName(String(t)));
@@ -4289,6 +4376,22 @@ function renderMaterialBySpeaker(matKey, title, icon, description, opts = {}) {
       sortedSP.splice(afterIdx + 1, 0, clone);
     });
   }
+  // 수동 추가 엔트리 (LOP에 없는 사람)
+  if (manualEntries.length > 0) {
+    manualEntries.forEach(m => {
+      sortedSP.push({...m, _isManual: true});
+    });
+  }
+  // 사용자 수동 정렬 적용 (customOrder에 있는 id 우선 그 순서, 없으면 기존 위치 유지)
+  if (customOrder.length > 0) {
+    const orderMap = new Map(customOrder.map((id, i) => [id, i]));
+    sortedSP.sort((a, b) => {
+      // NaN 방지: Infinity → MAX_SAFE_INTEGER 사용
+      const ao = orderMap.has(a.id) ? orderMap.get(a.id) : Number.MAX_SAFE_INTEGER;
+      const bo = orderMap.has(b.id) ? orderMap.get(b.id) : Number.MAX_SAFE_INTEGER;
+      return ao - bo;
+    });
+  }
   // 통계
   const total = sortedSP.length;
   const collected = sortedSP.filter(s => matData[s.id]?.collected).length;
@@ -4327,9 +4430,15 @@ function renderMaterialBySpeaker(matKey, title, icon, description, opts = {}) {
         </div>
         <div style="font-size:12px;color:#64748b;margin-top:5px;">${esc(description)}</div>
       </div>
-      <div style="text-align:right;flex-shrink:0;">
-        <div style="font-size:22px;font-weight:800;color:#1B4FA0;">${pctVal}<span style="font-size:13px;">%</span></div>
-        <div style="font-size:10px;color:#64748b;font-weight:600;">진행률</div>
+      <div style="text-align:right;flex-shrink:0;display:flex;align-items:center;gap:8px;">
+        <div>
+          <div style="font-size:22px;font-weight:800;color:#1B4FA0;">${pctVal}<span style="font-size:13px;">%</span></div>
+          <div style="font-size:10px;color:#64748b;font-weight:600;">진행률</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <button onclick="toggleMatEditSort('${matKey}')" style="padding:4px 10px;border-radius:14px;font-size:10px;font-weight:700;background:${editSortMode?'#1B4FA0':'#F1F5F9'};color:${editSortMode?'#fff':'#1B4FA0'};border:1px solid #BFDBFE;cursor:pointer;white-space:nowrap;">${editSortMode?'✓ 완료':'↕ 순서 편집'}</button>
+          <button onclick="openMatAddDialog('${matKey}')" style="padding:4px 10px;border-radius:14px;font-size:10px;font-weight:700;background:#DCFCE7;color:#15803d;border:1px solid #BBF7D0;cursor:pointer;white-space:nowrap;">＋ 추가</button>
+        </div>
       </div>
     </div>
     <div style="margin-top:10px;height:6px;background:#F1F5F9;border-radius:99px;overflow:hidden;">
@@ -4361,26 +4470,33 @@ function renderMaterialBySpeaker(matKey, title, icon, description, opts = {}) {
           : "";
         const isOpen = window._matExpandedId === `${matKey}:${sp.id}`;
         return `
-        <div class="card" style="padding:0;overflow:hidden;border:1px solid ${d.collected?'#BBF7D0':'#E2E8F0'};margin-bottom:0;">
+        <div class="card" style="padding:0;overflow:hidden;border:1px solid ${editSortMode?'#FDE68A':(d.collected?'#BBF7D0':'#E2E8F0')};margin-bottom:0;background:${editSortMode?'#FFFBEB':'#fff'};">
           <div style="padding:10px 13px;display:flex;align-items:center;gap:10px;">
-            <input type="checkbox" ${d.collected?"checked":""} onchange="toggleMatCollected('${matKey}','${sp.id}',this.checked)" style="width:20px;height:20px;cursor:pointer;flex-shrink:0;accent-color:#16a34a;">
-            <div onclick="toggleMatCard('${matKey}','${sp.id}')" style="flex:1;min-width:0;cursor:pointer;">
+            ${editSortMode ? `
+              <div style="display:flex;flex-direction:column;gap:3px;flex-shrink:0;">
+                <button onclick="event.stopPropagation();moveMatItem('${matKey}','${sp.id}',-1)" style="padding:3px 10px;border-radius:5px;background:#1B4FA0;color:#fff;border:none;cursor:pointer;font-size:12px;line-height:1;font-weight:700;min-width:30px;" title="위로">▲</button>
+                <button onclick="event.stopPropagation();moveMatItem('${matKey}','${sp.id}',1)" style="padding:3px 10px;border-radius:5px;background:#1B4FA0;color:#fff;border:none;cursor:pointer;font-size:12px;line-height:1;font-weight:700;min-width:30px;" title="아래로">▼</button>
+              </div>
+            ` : `<input type="checkbox" ${d.collected?"checked":""} onchange="toggleMatCollected('${matKey}','${sp.id}',this.checked)" style="width:20px;height:20px;cursor:pointer;flex-shrink:0;accent-color:#16a34a;">`}
+            <div onclick="${editSortMode?'':`toggleMatCard('${matKey}','${sp.id}')`}" style="flex:1;min-width:0;cursor:${editSortMode?'default':'pointer'};">
               <div style="font-size:13px;font-weight:700;color:${d.collected?'#15803d':'#0B1D3F'};display:flex;align-items:center;gap:5px;flex-wrap:wrap;">
                 <span style="text-decoration:${d.collected?'line-through':'none'};opacity:${d.collected?'0.7':'1'};">${esc(fullName)}</span>
-                ${sbadge(sp.status||"pending")}
+                ${sp._isManual ? `<span style="font-size:9px;background:#FEF3C7;color:#92400e;padding:1px 6px;border-radius:4px;font-weight:700;">＋ 수동</span>` : sbadge(sp.status||"pending")}
                 ${dupBadge}
                 ${files.length > 0 ? `<span style="font-size:10px;background:#EFF6FF;color:#1B4FA0;padding:1px 6px;border-radius:4px;font-weight:700;">📎 ${files.length}</span>` : ""}
               </div>
               ${(sp.org || sp.title) ? `<div style="font-size:11px;color:#64748b;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${sp.title?esc(sp.title)+(sp.org?" · ":""):""}${esc(sp.org||"")}</div>` : ""}
               ${sp.email ? `<div style="font-size:10px;color:#94a3b8;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">📧 ${esc(sp.email)}</div>` : ""}
             </div>
-            <label style="padding:5px 11px;border-radius:14px;cursor:pointer;font-size:11px;font-weight:700;background:#EFF6FF;color:#1B4FA0;border:1px solid #BFDBFE;flex-shrink:0;white-space:nowrap;" title="자료 업로드">
+            ${editSortMode ? `
+              ${sp._isManual ? `<button onclick="deleteMatManual('${matKey}','${sp.id}')" style="padding:4px 9px;border-radius:5px;background:#FEF2F2;color:#ef4444;border:1px solid #FECACA;cursor:pointer;font-size:10px;font-weight:700;flex-shrink:0;">✕ 삭제</button>` : ""}
+            ` : `<label style="padding:5px 11px;border-radius:14px;cursor:pointer;font-size:11px;font-weight:700;background:#EFF6FF;color:#1B4FA0;border:1px solid #BFDBFE;flex-shrink:0;white-space:nowrap;" title="자료 업로드">
               📎 첨부
               <input type="file" multiple style="display:none;" onchange="uploadSpeakerMaterial('${matKey}','${sp.id}',event)">
-            </label>
-            <span onclick="toggleMatCard('${matKey}','${sp.id}')" style="font-size:14px;color:#94a3b8;flex-shrink:0;cursor:pointer;transform:rotate(${isOpen?'90':'0'}deg);transition:transform .15s;">›</span>
+            </label>`}
+            ${editSortMode ? "" : `<span onclick="toggleMatCard('${matKey}','${sp.id}')" style="font-size:14px;color:#94a3b8;flex-shrink:0;cursor:pointer;transform:rotate(${isOpen?'90':'0'}deg);transition:transform .15s;">›</span>`}
           </div>
-          ${isOpen ? `
+          ${(isOpen && !editSortMode) ? `
           <div style="padding:11px 13px;background:#F8FAFC;border-top:1px solid #E2E8F0;">
             ${files.length === 0 ? `
               <div style="text-align:center;padding:14px;color:#94a3b8;font-size:11px;border:1.5px dashed #E2E8F0;border-radius:7px;margin-bottom:8px;">아직 첨부 파일 없음 — 📎 첨부 버튼으로 업로드</div>
@@ -4405,7 +4521,33 @@ function renderMaterialBySpeaker(matKey, title, icon, description, opts = {}) {
         </div>`;
       }).join("")}
     </div>
-  `}`;
+  `}
+  ${window._matAddMatKey === matKey ? `
+    <div onclick="if(event.target===this)closeMatAddDialog()" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;">
+      <div style="background:#fff;border-radius:14px;max-width:480px;width:100%;box-shadow:0 20px 50px rgba(0,0,0,.3);overflow:hidden;">
+        <div style="padding:14px 18px;border-bottom:1px solid #E2E8F0;display:flex;justify-content:space-between;align-items:center;">
+          <div style="font-size:15px;font-weight:800;color:#0B1D3F;">＋ 항목 추가 (${title})</div>
+          <button onclick="closeMatAddDialog()" style="background:none;border:none;cursor:pointer;font-size:18px;color:#94a3b8;">×</button>
+        </div>
+        <div style="padding:16px 18px;display:flex;flex-direction:column;gap:10px;">
+          <div><label style="font-size:11px;font-weight:700;color:#64748b;display:block;margin-bottom:4px;">이름 <span style="color:#ef4444;">*</span></label>
+            <input id="mat-add-name" type="text" placeholder="예: John Doe" style="width:100%;padding:8px 11px;border-radius:7px;border:1.5px solid #BFDBFE;font-size:12px;outline:none;box-sizing:border-box;"></div>
+          <div><label style="font-size:11px;font-weight:700;color:#64748b;display:block;margin-bottom:4px;">직책</label>
+            <input id="mat-add-title" type="text" placeholder="예: Director" style="width:100%;padding:8px 11px;border-radius:7px;border:1.5px solid #BFDBFE;font-size:12px;outline:none;box-sizing:border-box;"></div>
+          <div><label style="font-size:11px;font-weight:700;color:#64748b;display:block;margin-bottom:4px;">소속</label>
+            <input id="mat-add-org" type="text" placeholder="예: WHO" style="width:100%;padding:8px 11px;border-radius:7px;border:1.5px solid #BFDBFE;font-size:12px;outline:none;box-sizing:border-box;"></div>
+          <div><label style="font-size:11px;font-weight:700;color:#64748b;display:block;margin-bottom:4px;">이메일</label>
+            <input id="mat-add-email" type="text" placeholder="예: name@example.com" style="width:100%;padding:8px 11px;border-radius:7px;border:1.5px solid #BFDBFE;font-size:12px;outline:none;box-sizing:border-box;"></div>
+          <div style="font-size:10px;color:#94a3b8;background:#F1F5F9;padding:7px 10px;border-radius:6px;line-height:1.5;">💡 LOP에 등록되지 않은 사람을 이 페이지에만 추가합니다. ↕ 순서 편집으로 위치 이동 가능.</div>
+        </div>
+        <div style="padding:12px 18px;border-top:1px solid #E2E8F0;display:flex;gap:8px;justify-content:flex-end;">
+          <button onclick="closeMatAddDialog()" class="btn btn-sm" style="background:#F1F5F9;color:#64748b;border:none;">취소</button>
+          <button onclick="saveMatManual()" class="btn btn-sm" style="background:#16a34a;color:#fff;border:none;">＋ 추가</button>
+        </div>
+      </div>
+    </div>
+  ` : ""}
+  `;
 }
 
 window.toggleMatCard = (matKey, spId) => {
@@ -4465,6 +4607,144 @@ window.updateSpeakerMaterialNotes = (matKey, spId, value) => {
   scheduleSave();
 };
 
+// ── 순서 편집 / 수동 추가 핸들러 ──
+window.toggleMatEditSort = (matKey) => {
+  window._matEditSort = (window._matEditSort === matKey) ? null : matKey;
+  draw();
+};
+
+// 현재 화면에 표시된 sortedSP를 재구성하기 위한 보조: pageMatPpt의 옵션을 재현
+function _rebuildMatSorted(matKey) {
+  // 페이지 호출로 sortedSP를 다시 계산
+  if (matKey === "ppt") {
+    return _computeMatSortedForOpts({
+      excludeChairs: true,
+      excludeNames: ["Jerome", "Lim", "Minwon", "Jae Kyoun", "Hee Soo", "Jae-Hwan"],
+      includeNames: ["Sushant"],
+      duplicateAfter: [{after:"Sushant", name:"Nakorn Premsri", suffix:"Plenary"}]
+    }, matKey);
+  }
+  if (matKey === "abstract") {
+    return _computeMatSortedForOpts({}, matKey);
+  }
+  return _computeMatSortedForOpts({}, matKey);
+}
+
+function _computeMatSortedForOpts(opts, matKey) {
+  // renderMaterialBySpeaker의 정렬 결과만 추출하는 헬퍼
+  const excludeChairs = opts.excludeChairs === true;
+  const excludeNames = Array.isArray(opts.excludeNames) ? opts.excludeNames : [];
+  const includeNames = Array.isArray(opts.includeNames) ? opts.includeNames : [];
+  const duplicateAfter = Array.isArray(opts.duplicateAfter) ? opts.duplicateAfter : [];
+  const manualEntries = (window.MAT_MANUAL?.[matKey]) || [];
+  const customOrder = (window.MAT_SORT_ORDER?.[matKey]) || [];
+  const includeNorms = includeNames.map(t => normalizeSpName(String(t)));
+  const isIncluded = (sp) => includeNorms.some(t => t && normalizeSpName(sp.name||"").includes(t));
+  let arr;
+  if (excludeChairs) {
+    const chairIds = getChairIdSet();
+    SP.forEach(s => { if (isIncluded(s)) chairIds.delete(s.id); });
+    arr = getSpeakersSortedByLOP().filter(s => !chairIds.has(s.id));
+  } else arr = getSpeakersSortedByLOP();
+  if (excludeNames.length > 0) {
+    arr = arr.filter(s => {
+      if (isIncluded(s)) return true;
+      const f = normalizeSpName(s.name||"");
+      return !excludeNames.some(t => f.includes(normalizeSpName(String(t))));
+    });
+  }
+  duplicateAfter.forEach(rule => {
+    const afterN = normalizeSpName(rule.after||"");
+    const tgtN = normalizeSpName(rule.name||"");
+    if (!afterN || !tgtN) return;
+    const target = SP.find(s => normalizeSpName(s.name||"").includes(tgtN));
+    if (!target) return;
+    const idx = arr.findIndex(s => normalizeSpName(s.name||"").includes(afterN));
+    if (idx < 0) return;
+    const dupId = target.id + "_dup_" + (rule.suffix ? rule.suffix.replace(/\s+/g,"_") : "1");
+    arr.splice(idx+1, 0, {...target, id: dupId, _isDuplicate:true, _origId:target.id, _suffix:rule.suffix||""});
+  });
+  manualEntries.forEach(m => arr.push({...m, _isManual:true}));
+  if (customOrder.length > 0) {
+    const ord = new Map(customOrder.map((id,i)=>[id,i]));
+    arr.sort((a,b)=>{
+      const ai = ord.has(a.id) ? ord.get(a.id) : Number.MAX_SAFE_INTEGER;
+      const bi = ord.has(b.id) ? ord.get(b.id) : Number.MAX_SAFE_INTEGER;
+      return ai - bi;
+    });
+  }
+  return arr;
+}
+
+window.moveMatItem = (matKey, spId, delta) => {
+  if (!window.MAT_SORT_ORDER) window.MAT_SORT_ORDER = {};
+  try {
+    const arr = _rebuildMatSorted(matKey);
+    const ids = arr.map(s => s.id);
+    const idx = ids.indexOf(spId);
+    if (idx < 0) {
+      console.warn(`[순서편집] id 못 찾음: ${spId} (matKey=${matKey})`, ids);
+      return;
+    }
+    const newIdx = idx + delta;
+    if (newIdx < 0 || newIdx >= ids.length) {
+      console.log(`[순서편집] 경계 도달 (idx=${idx}, delta=${delta})`);
+      return;
+    }
+    // swap
+    const tmp = ids[idx];
+    ids[idx] = ids[newIdx];
+    ids[newIdx] = tmp;
+    window.MAT_SORT_ORDER[matKey] = ids;
+    console.log(`[순서편집] ${spId} 이동: ${idx} → ${newIdx}`);
+    scheduleSave();
+    draw();
+  } catch(e) {
+    console.error("[순서편집] 오류:", e);
+    alert("순서 편집 중 오류: " + e.message);
+  }
+};
+
+window.deleteMatManual = (matKey, manualId) => {
+  if (!window.MAT_MANUAL?.[matKey]) return;
+  const arr = window.MAT_MANUAL[matKey];
+  const idx = arr.findIndex(m => m.id === manualId);
+  if (idx < 0) return;
+  if (!confirm(`"${arr[idx].name}" 항목을 삭제하시겠습니까?`)) return;
+  arr.splice(idx, 1);
+  // 정렬 순서에서도 제거
+  if (window.MAT_SORT_ORDER?.[matKey]) {
+    window.MAT_SORT_ORDER[matKey] = window.MAT_SORT_ORDER[matKey].filter(id => id !== manualId);
+  }
+  scheduleSave();
+  draw();
+};
+
+window.openMatAddDialog = (matKey) => {
+  window._matAddMatKey = matKey;
+  draw();
+};
+window.closeMatAddDialog = () => {
+  window._matAddMatKey = null;
+  draw();
+};
+window.saveMatManual = () => {
+  const matKey = window._matAddMatKey;
+  if (!matKey) return;
+  const name = document.getElementById("mat-add-name")?.value.trim();
+  if (!name) { alert("이름을 입력하세요"); return; }
+  const org = document.getElementById("mat-add-org")?.value.trim() || "";
+  const titleVal = document.getElementById("mat-add-title")?.value.trim() || "";
+  const email = document.getElementById("mat-add-email")?.value.trim() || "";
+  if (!window.MAT_MANUAL) window.MAT_MANUAL = {};
+  if (!window.MAT_MANUAL[matKey]) window.MAT_MANUAL[matKey] = [];
+  const id = "man_" + matKey + "_" + Date.now();
+  window.MAT_MANUAL[matKey].push({id, name, org, title:titleVal, email, status:"pending"});
+  window._matAddMatKey = null;
+  scheduleSave();
+  draw();
+};
+
 function pageMatAbstract() {
   return renderMaterialBySpeaker("abstract", "Abstract Book", "📖", "연사별 발표 초록(Abstract) 수집 및 자료집 제작");
 }
@@ -4474,7 +4754,7 @@ function pageMatPpt() {
     excludeNames: ["Jerome", "Lim", "Minwon", "Jae Kyoun", "Hee Soo", "Jae-Hwan"],
     includeNames: ["Sushant"],
     duplicateAfter: [
-      {after: "Sushant", name: "Nakorn Premsri", suffix: "S2"}
+      {after: "Sushant", name: "Nakorn Premsri", suffix: "Plenary"}
     ]
   });
 }
