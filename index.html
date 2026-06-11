@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- GVF 2026 Dashboard v3.13 — Build: 2026-06-11 10:15 KST — ATTENDEES separated -->
+<!-- GVF 2026 Dashboard v3.16 — Build: 2026-06-11 17:30 KST — PPT exclude Mariatou, Ajoy -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8"/>
@@ -4429,11 +4429,13 @@ function renderMaterialBySpeaker(matKey, title, icon, description, opts = {}) {
   }
   // 사용자 수동 정렬 적용 (customOrder에 있는 id 우선 그 순서, 없으면 기존 위치 유지)
   if (customOrder.length > 0) {
-    const orderMap = new Map(customOrder.map((id, i) => [id, i]));
+    // 문자열로 통일해서 매핑 (숫자 id 호환)
+    const orderMap = new Map(customOrder.map((id, i) => [String(id), i]));
     sortedSP.sort((a, b) => {
-      // NaN 방지: Infinity → MAX_SAFE_INTEGER 사용
-      const ao = orderMap.has(a.id) ? orderMap.get(a.id) : Number.MAX_SAFE_INTEGER;
-      const bo = orderMap.has(b.id) ? orderMap.get(b.id) : Number.MAX_SAFE_INTEGER;
+      const aKey = String(a.id);
+      const bKey = String(b.id);
+      const ao = orderMap.has(aKey) ? orderMap.get(aKey) : Number.MAX_SAFE_INTEGER;
+      const bo = orderMap.has(bKey) ? orderMap.get(bKey) : Number.MAX_SAFE_INTEGER;
       return ao - bo;
     });
   }
@@ -4664,7 +4666,7 @@ function _rebuildMatSorted(matKey) {
   if (matKey === "ppt") {
     return _computeMatSortedForOpts({
       excludeChairs: true,
-      excludeNames: ["Jerome", "Lim", "Minwon", "Jae Kyoun", "Hee Soo", "Jae-Hwan"],
+      excludeNames: ["Jerome", "Lim", "Minwon", "Jae Kyoun", "Hee Soo", "Jae-Hwan", "Mariatou", "Ajoy"],
       includeNames: ["Sushant"],
       duplicateAfter: [{after:"Sushant", name:"Nakorn Premsri", suffix:"Plenary"}]
     }, matKey);
@@ -4711,10 +4713,10 @@ function _computeMatSortedForOpts(opts, matKey) {
   });
   manualEntries.forEach(m => arr.push({...m, _isManual:true}));
   if (customOrder.length > 0) {
-    const ord = new Map(customOrder.map((id,i)=>[id,i]));
+    const ord = new Map(customOrder.map((id,i)=>[String(id), i]));
     arr.sort((a,b)=>{
-      const ai = ord.has(a.id) ? ord.get(a.id) : Number.MAX_SAFE_INTEGER;
-      const bi = ord.has(b.id) ? ord.get(b.id) : Number.MAX_SAFE_INTEGER;
+      const ai = ord.has(String(a.id)) ? ord.get(String(a.id)) : Number.MAX_SAFE_INTEGER;
+      const bi = ord.has(String(b.id)) ? ord.get(String(b.id)) : Number.MAX_SAFE_INTEGER;
       return ai - bi;
     });
   }
@@ -4722,13 +4724,18 @@ function _computeMatSortedForOpts(opts, matKey) {
 }
 
 window.moveMatItem = (matKey, spId, delta) => {
+  console.log(`[순서편집] 시작: matKey=${matKey}, spId=${spId}, delta=${delta}`);
   if (!window.MAT_SORT_ORDER) window.MAT_SORT_ORDER = {};
   try {
     const arr = _rebuildMatSorted(matKey);
-    const ids = arr.map(s => s.id);
-    const idx = ids.indexOf(spId);
+    console.log(`[순서편집] 현재 정렬:`, arr.map(s => `${s.id}:${s.name}`));
+    // 문자열로 통일 비교 (숫자 id 호환)
+    const ids = arr.map(s => String(s.id));
+    const targetId = String(spId);
+    const idx = ids.indexOf(targetId);
     if (idx < 0) {
-      console.warn(`[순서편집] id 못 찾음: ${spId} (matKey=${matKey})`, ids);
+      console.warn(`[순서편집] ❌ id 못 찾음: ${targetId} (matKey=${matKey})`, ids);
+      alert(`디버그: id "${targetId}"를 찾을 수 없습니다.\n콘솔(F12) 확인하세요.`);
       return;
     }
     const newIdx = idx + delta;
@@ -4741,11 +4748,12 @@ window.moveMatItem = (matKey, spId, delta) => {
     ids[idx] = ids[newIdx];
     ids[newIdx] = tmp;
     window.MAT_SORT_ORDER[matKey] = ids;
-    console.log(`[순서편집] ${spId} 이동: ${idx} → ${newIdx}`);
+    console.log(`[순서편집] ✅ ${targetId} 이동: ${idx} → ${newIdx}`);
+    console.log(`[순서편집] 새 정렬 저장:`, ids);
     scheduleSave();
     draw();
   } catch(e) {
-    console.error("[순서편집] 오류:", e);
+    console.error("[순서편집] ❌ 오류:", e);
     alert("순서 편집 중 오류: " + e.message);
   }
 };
@@ -4796,7 +4804,7 @@ function pageMatAbstract() {
 function pageMatPpt() {
   return renderMaterialBySpeaker("ppt", "PPT Slides", "🖼", "연사별 발표 슬라이드 수집 (좌장·인사말 등 제외)", {
     excludeChairs: true,
-    excludeNames: ["Jerome", "Lim", "Minwon", "Jae Kyoun", "Hee Soo", "Jae-Hwan"],
+    excludeNames: ["Jerome", "Lim", "Minwon", "Jae Kyoun", "Hee Soo", "Jae-Hwan", "Mariatou", "Ajoy"],
     includeNames: ["Sushant"],
     duplicateAfter: [
       {after: "Sushant", name: "Nakorn Premsri", suffix: "Plenary"}
