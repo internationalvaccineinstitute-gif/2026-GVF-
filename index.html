@@ -502,7 +502,13 @@ function initFirebase(cfg) {
       if (d.td && Array.isArray(d.td))  TRAVEL_DETAIL = d.td;
       if (d.be && Array.isArray(d.be))  BUDGET_ENTRIES= d.be;
       if (d.tp && typeof d.tp === "object") TRAVEL_PAID = {...TRAVEL_PAID, ...d.tp};
-      if (d.at && Array.isArray(d.at)) ATTENDEES = d.at;
+      // ⚠️ ATTENDEES는 별도 문서 "attendees"에서 로드 (마이그레이션 시 main에 있을 수 있음)
+      if (d.at && Array.isArray(d.at) && d.at.length > 0 && (!ATTENDEES || ATTENDEES.length === 0)) {
+        // 옛 위치(main)에서 발견 → 임시로 사용 (별도 문서로 마이그레이션은 첫 저장 시)
+        ATTENDEES = d.at;
+        window._attendeesNeedMigration = true;
+        console.log(`[마이그레이션] main 문서에서 ATTENDEES ${d.at.length}명 발견 → 다음 저장 시 별도 문서로 이동`);
+      }
       if (d.atc && typeof d.atc === "object") ATTENDEES_CONFIG = {...ATTENDEES_CONFIG, ...d.atc};
       if (d.dt && typeof d.dt === "object") DAILY_TODOS = d.dt;
       if (d.sm && Array.isArray(d.sm))       SIDEBAR_MENU = d.sm;
@@ -569,6 +575,21 @@ function initFirebase(cfg) {
       updateFbStatus(false);
     });
 
+    // ⭐ ATTENDEES 별도 문서 구독 (1MB 한도 회피)
+    db.collection(FS_COL).doc("attendees").onSnapshot(snap => {
+      const d = snap.data();
+      if (!d) return;
+      isReceiving = true;
+      if (d.at && Array.isArray(d.at)) {
+        ATTENDEES = d.at;
+        console.log(`[ATTENDEES] 별도 문서에서 ${d.at.length}명 로드`);
+      }
+      draw();
+      setTimeout(() => { isReceiving = false; }, 300);
+    }, err => {
+      console.warn("[ATTENDEES] onSnapshot 오류:", err.message);
+    });
+
     updateFbStatus(true);
     return true;
   } catch(e) {
@@ -583,14 +604,14 @@ async function saveToFirestore() {
   if (!db) return false;
   const now = ts();
   try {
-    await db.collection(FS_COL).doc(FS_DOC).set({
+    // ⭐ main 문서 — ATTENDEES 제외하여 저장 (1MB 한도 회피)
+    const mainPayload = {
       cl: CL,
       sp: SP,
       bi: BUDGET_ITEMS,
       td: TRAVEL_DETAIL,
       be: BUDGET_ENTRIES,
       tp: TRAVEL_PAID,
-      at: ATTENDEES,
       atc: ATTENDEES_CONFIG,
       dt: DAILY_TODOS,
       sm: SIDEBAR_MENU,
@@ -602,8 +623,27 @@ async function saveToFirestore() {
       ms: MILESTONES,
       agendaHtml: AGENDA_HTML,
       agendaMeta: AGENDA_META,
-      savedAt: now,
+      savedAt: now
+    };
+    // 마이그레이션 중이면 main에서 at 필드를 명시적으로 삭제
+    if (window._attendeesNeedMigration && typeof firebase !== "undefined" && firebase.firestore?.FieldValue?.delete) {
+      mainPayload.at = firebase.firestore.FieldValue.delete();
+      console.log("[마이그레이션] main 문서에서 at 필드 삭제 예정");
+    }
+    await db.collection(FS_COL).doc(FS_DOC).set(mainPayload, {merge: true});
+
+    // ⭐ ATTENDEES — 별도 문서에 저장
+    await db.collection(FS_COL).doc("attendees").set({
+      at: ATTENDEES,
+      count: ATTENDEES.length,
+      savedAt: now
     });
+
+    // 마이그레이션 완료 플래그 클리어
+    if (window._attendeesNeedMigration) {
+      window._attendeesNeedMigration = false;
+      console.log(`[마이그레이션] 완료 — ATTENDEES ${ATTENDEES.length}명을 별도 문서로 이동`);
+    }
     savedAt = now;
     updateSyncPill("synced");
     setTimeout(() => updateSyncPill("idle"), 2000);
@@ -623,19 +663,22 @@ async function saveToFirestore() {
         mtiFiles: countMatFiles(window.MATERIALS_BY_ITEM)
       });
       window._lastSaveError.summary = payloadSize;
-      // 추정 크기 계산 (대략)
+      // 추정 main 페이로드 크기 (at 제외)
       const payload = {
         cl:CL, sp:SP, bi:BUDGET_ITEMS, td:TRAVEL_DETAIL, be:BUDGET_ENTRIES, dt:DAILY_TODOS,
-        tp:TRAVEL_PAID, at:ATTENDEES, atc:ATTENDEES_CONFIG, sm:SIDEBAR_MENU,
+        tp:TRAVEL_PAID, atc:ATTENDEES_CONFIG, sm:SIDEBAR_MENU,
         mt:window.MATERIALS||{}, mts:window.MATERIALS_BY_SPEAKER||{},
         mtso:window.MAT_SORT_ORDER||{}, mtsm:window.MAT_MANUAL||{},
         mti:window.MATERIALS_BY_ITEM||{}, ms:MILESTONES,
         agendaHtml:AGENDA_HTML, agendaMeta:AGENDA_META
       };
       const sizeKB = Math.round(JSON.stringify(payload).length / 1024);
+      const atSizeKB = Math.round(JSON.stringify(ATTENDEES).length / 1024);
       window._lastSaveError.sizeKB = sizeKB;
-      console.warn(`[Firestore] 페이로드 크기: ${sizeKB} KB (한도: 1024 KB)`);
-      if (sizeKB > 900) console.error(`⚠️ Firestore 1MB 한도 초과 임박! ${sizeKB}KB`);
+      window._lastSaveError.atSizeKB = atSizeKB;
+      console.warn(`[Firestore] main 크기: ${sizeKB}KB, attendees 크기: ${atSizeKB}KB (각 한도: 1024KB)`);
+      if (sizeKB > 900) console.error(`⚠️ main 1MB 한도 초과 임박! ${sizeKB}KB`);
+      if (atSizeKB > 900) console.error(`⚠️ attendees 1MB 한도 초과 임박! ${atSizeKB}KB`);
     } catch(_) {}
     updateSyncPill("error");
     return false;
@@ -665,17 +708,19 @@ window.showSaveErrorDetails = () => {
     `⚠️ Firestore 저장 오류 진단\n\n` +
     `시각: ${e.time}\n` +
     `에러: ${e.message}\n` +
-    `코드: ${e.code}\n` +
-    `페이로드 크기: ${e.sizeKB || "?"} KB (Firestore 한도: 1024 KB)\n\n` +
+    `코드: ${e.code}\n\n` +
+    `📦 문서별 크기 (각 한도: 1024 KB)\n` +
+    `- main 문서: ${e.sizeKB || "?"} KB\n` +
+    `- attendees 문서: ${e.atSizeKB || "?"} KB\n\n` +
     `📊 데이터 현황\n` +
     `- 체크리스트: ${CL.length}개\n` +
     `- 연사(SP): ${SP.length}명\n` +
-    `- 일반 참가자: ${ATTENDEES.length}명\n` +
+    `- 일반 참가자: ${ATTENDEES.length}명 (별도 문서)\n` +
     `- Materials(연사별) 파일: ${mtsInfo.count||0}개 (${mtsInfo.sizeKB||0}KB)\n` +
     `- Materials(항목별) 파일: ${mtiInfo.count||0}개 (${mtiInfo.sizeKB||0}KB)\n\n` +
     `💡 해결 방안\n` +
-    `1) Materials 첨부 파일 일부 삭제 (가장 큰 영향)\n` +
-    `2) Agenda HTML 단순화 (📋 Agenda 페이지)\n` +
+    `1) Materials 첨부 파일 일부 삭제\n` +
+    `2) Agenda HTML 단순화\n` +
     `3) 콘솔(F12)에서 자세한 에러 확인`
   );
 };
