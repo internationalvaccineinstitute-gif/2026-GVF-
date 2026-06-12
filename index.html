@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- GVF 2026 Dashboard v3.16 — Build: 2026-06-11 17:30 KST — PPT exclude Mariatou, Ajoy -->
+<!-- GVF 2026 Dashboard v3.17 — Build: 2026-06-12 KST — Export: ATTENDEES sheet, speaker email/PPT/Abstract, enhanced report -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8"/>
@@ -164,8 +164,8 @@ input[type=date]{font-size:16px !important;}
     <div class="urg-box" id="urg-box" onclick="showUrgentItemsView()" style="display:none;"></div>
     <div id="sb-menu-area" style="padding-top:8px;"></div>
     <div class="sb-foot">
-      마스터 대시보드 v2.5<br/>
-      © IVI, Seoul · 빌드 2026.05.11<br/>
+      마스터 대시보드 v3.17<br/>
+      © IVI, Seoul · 빌드 2026.06.12<br/>
       <span id="fb-status-dot" style="color:#FCA5A5;font-size:11px;font-weight:600;">⚠️ 미연결</span><br/>
       <button onclick="forceReload()" style="margin-top:6px;padding:3px 9px;border-radius:6px;background:#F1F5F9;color:#64748b;border:1px solid #E2E8F0;font-size:10px;cursor:pointer;">🔄 강제 새로고침</button>
     </div>
@@ -5108,7 +5108,7 @@ function pageExport() {
     <div class="card" style="text-align:center;border:2px solid #16a34a;background:linear-gradient(135deg,#F0FDF4,#fff);">
       <div style="font-size:46px;margin-bottom:12px;">📊</div>
       <div style="font-size:17px;font-weight:700;color:#0B1D3F;margin-bottom:6px;">엑셀 통합 다운로드</div>
-      <div style="font-size:12px;color:#64748b;margin-bottom:16px;line-height:1.7;">모든 항목을 시트별로 정리한 단일 엑셀 파일로 다운로드 (.xlsx)<br><strong>준비현황 · 연사 · 예산항목 · 항공숙박 · 지출내역 · To-do · Agenda</strong></div>
+      <div style="font-size:12px;color:#64748b;margin-bottom:16px;line-height:1.7;">모든 항목을 시트별로 정리한 단일 엑셀 파일로 다운로드 (.xlsx)<br><strong>요약 · 준비현황 · 연사(이메일/PPT/Abstract) · 일반 참가자 · 예산항목 · 항공숙박 · 지출내역 · To-do · Agenda</strong></div>
       <button class="btn btn-p" style="width:100%;justify-content:center;background:linear-gradient(135deg,#16a34a,#15803d);" onclick="doExcel()">📥 통합 엑셀 다운로드</button>
     </div>
     <div class="card" style="text-align:center;"><div style="font-size:46px;margin-bottom:12px;">📝</div><div style="font-size:17px;font-weight:700;color:#0B1D3F;margin-bottom:6px;">보고서 텍스트 생성</div><div style="font-size:12px;color:#64748b;margin-bottom:16px;line-height:1.7;">현재 현황을 공식 보고서 형식으로 생성합니다.</div><button class="btn" style="width:100%;justify-content:center;background:linear-gradient(135deg,#0d9488,#0891b2);color:#fff;border:none;" onclick="doReport()">📄 보고서 텍스트 다운로드</button></div>
@@ -5121,6 +5121,7 @@ function pageExport() {
     <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(180px, 1fr));gap:8px;">
       <button onclick="doExcelSheet('checklist')" class="btn btn-sm" style="justify-content:center;background:#EFF6FF;color:#1B4FA0;border:1px solid #BFDBFE;">✅ 준비 현황</button>
       <button onclick="doExcelSheet('speakers')"  class="btn btn-sm" style="justify-content:center;background:#EFF6FF;color:#1B4FA0;border:1px solid #BFDBFE;">👥 연사 명단</button>
+      <button onclick="doExcelSheet('attendees')" class="btn btn-sm" style="justify-content:center;background:#EFF6FF;color:#1B4FA0;border:1px solid #BFDBFE;">🪑 일반 참가자</button>
       <button onclick="doExcelSheet('budget')"    class="btn btn-sm" style="justify-content:center;background:#EFF6FF;color:#1B4FA0;border:1px solid #BFDBFE;">📊 예산 항목</button>
       <button onclick="doExcelSheet('travel')"    class="btn btn-sm" style="justify-content:center;background:#EFF6FF;color:#1B4FA0;border:1px solid #BFDBFE;">✈️ 항공·숙박</button>
       <button onclick="doExcelSheet('entries')"   class="btn btn-sm" style="justify-content:center;background:#EFF6FF;color:#1B4FA0;border:1px solid #BFDBFE;">💰 지출 내역</button>
@@ -7391,11 +7392,66 @@ window.doCSV = () => {
 };
 window.doReport = () => {
   const done=CL.filter(t=>t.done).length,total=CL.length,conf=SP.filter(s=>s.status==="confirmed").length;
-  let t=`2026 IVI Global Vaccine Forum 준비 현황 보고\n${"=".repeat(46)}\n기준일: ${ts()} / D-${D_DAY}\n\n■ 행사 개요\n  - 일시: ${FORUM_DATE}\n  - 장소: Royal Hall (3F), Peace & Park Convention, Seoul\n\n■ 진행률: ${total}개 중 ${done}개 완료 (${pct(done,total)}%)\n\n■ 카테고리\n`;
-  CATS.forEach(cat=>{const it=CL.filter(x=>x.cat===cat),d=it.filter(x=>x.done).length;t+=`  - ${cat}: ${d}/${it.length} (${pct(d,it.length)}%)\n`;});
-  t+=`\n■ 연사 (전체 ${SP.length}명 / 확정 ${conf}명)\n`;
-  SP.filter(s=>s.status==="confirmed").forEach(s=>{t+=`  · ${s.name} (${s.org})\n`;});
-  const blob=new Blob([t],{type:"text/plain;charset=utf-8;"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download="2026_GVF_현황보고서.txt";a.click();URL.revokeObjectURL(url);
+  const onsiteCount  = ATTENDEES.filter(a => getAttendanceMode(a) === "onsite").length;
+  const virtualCount = ATTENDEES.filter(a => getAttendanceMode(a) === "virtual").length;
+  const matBySp = window.MATERIALS_BY_SPEAKER || {};
+  const pptCollected = SP.filter(s => (matBySp.ppt     || {})[s.id]?.collected).length;
+  const absCollected = SP.filter(s => (matBySp.abstract || {})[s.id]?.collected).length;
+
+  let t = `2026 IVI Global Vaccine Forum 준비 현황 보고\n${"=".repeat(46)}\n기준일: ${ts()} / D-${D_DAY}\n\n`;
+  t += `■ 행사 개요\n`;
+  t += `  - 일시: ${FORUM_DATE}\n`;
+  t += `  - 장소: Royal Hall (3F), Peace & Park Convention, Seoul\n\n`;
+
+  t += `■ 준비 진행률: ${total}개 중 ${done}개 완료 (${pct(done,total)}%)\n`;
+  CATS.forEach(cat => {
+    const it = CL.filter(x => x.cat === cat), d = it.filter(x => x.done).length;
+    t += `  - ${cat}: ${d}/${it.length} (${pct(d,it.length)}%)\n`;
+  });
+
+  t += `\n■ 연사 현황 (전체 ${SP.length}명 / 확정 ${conf}명)\n`;
+  t += `  · 확정\n`;
+  SP.filter(s => s.status === "confirmed").forEach(s => { t += `    - ${s.name} (${s.org}) — ${s.role || ""}\n`; });
+  const pending = SP.filter(s => s.status === "pending");
+  if (pending.length > 0) {
+    t += `  · 대기 중 (${pending.length}명)\n`;
+    pending.forEach(s => { t += `    - ${s.name} (${s.org})\n`; });
+  }
+  t += `  · PPT 수집: ${pptCollected}/${SP.length}명  |  Abstract 수집: ${absCollected}/${SP.length}명\n`;
+
+  if (ATTENDEES.length > 0) {
+    t += `\n■ 일반 참가자 현황 (총 ${ATTENDEES.length}명)\n`;
+    t += `  - On-site: ${onsiteCount}명\n`;
+    t += `  - Virtual: ${virtualCount}명\n`;
+  }
+
+  ensureAgendaRows();
+  if (AGENDA_ROWS && AGENDA_ROWS.length > 0) {
+    t += `\n■ Agenda\n`;
+    AGENDA_ROWS.forEach(r => {
+      if (r.type === "section") {
+        t += `\n  [${r.label}]${r.chair ? "  좌장: " + r.chair : ""}\n`;
+      } else if (r.type === "row") {
+        const spNames = (r.speakers || []).map(sp => sp.name).join(", ");
+        t += `    ${r.time || ""}  ${r.title || ""}${spNames ? "  (" + spNames + ")" : ""}\n`;
+      }
+    });
+  }
+
+  const totalBudget = BUDGET_ITEMS.reduce((s,b)=>s+b.budget,0);
+  t += `\n■ 예산 요약\n  - 총 예산: ₩${totalBudget.toLocaleString()}\n`;
+  BUDGET_ITEMS.forEach(b => {
+    const actual = b.id === "b1"
+      ? TRAVEL_DETAIL.reduce((s,tr) => s+tr.flight+tr.hotel+tr.trans+tr.misc, 0)
+      : BUDGET_ENTRIES.filter(e => e.budgetId === b.id).reduce((s,e) => s+e.amount, 0);
+    t += `  - ${b.label}: 예산 ₩${b.budget.toLocaleString()} / 집행 ₩${actual.toLocaleString()}\n`;
+  });
+
+  const blob = new Blob([t], {type:"text/plain;charset=utf-8;"});
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
+  a.href = url; a.download = "2026_GVF_현황보고서.txt"; a.click();
+  URL.revokeObjectURL(url);
 };
 // ═══════════════════════════════════════════════════════════
 //   엑셀(.xlsx) 내보내기 — SheetJS
@@ -7421,16 +7477,24 @@ function _buildSheets() {
   ];
 
   // 연사 명단
+  const matBySp = window.MATERIALS_BY_SPEAKER || {};
   const sheetSpeakers = [
-    ["이름", "소속", "역할", "세션", "상태", "항공/숙박"],
-    ...SP.map(s => [
-      s.name || "",
-      s.org || "",
-      s.role || "",
-      s.session || "",
-      SM_LABEL[s.status] || s.status || "",
-      s.travel || ""
-    ])
+    ["이름", "소속", "역할", "세션", "상태", "항공/숙박", "이메일", "PPT 수집", "Abstract 수집"],
+    ...SP.map(s => {
+      const pptData     = (matBySp.ppt      || {})[s.id] || {};
+      const absData     = (matBySp.abstract  || {})[s.id] || {};
+      return [
+        s.name || "",
+        s.org || "",
+        s.role || "",
+        s.session || "",
+        SM_LABEL[s.status] || s.status || "",
+        s.travel || "",
+        s.email || "",
+        pptData.collected     ? "✅ 완료" : (pptData.files && pptData.files.length > 0 ? `${pptData.files.length}개` : ""),
+        absData.collected     ? "✅ 완료" : (absData.files && absData.files.length > 0 ? `${absData.files.length}개` : ""),
+      ];
+    })
   ];
 
   // 예산 항목
@@ -7509,6 +7573,34 @@ function _buildSheets() {
     }
   });
 
+  // 일반 참가자
+  let sheetAttendees;
+  if (ATTENDEES.length > 0) {
+    const keys = Object.keys(ATTENDEES[0]).filter(k => !k.startsWith("_") && k !== "id");
+    const onsiteCount  = ATTENDEES.filter(a => getAttendanceMode(a) === "onsite").length;
+    const virtualCount = ATTENDEES.filter(a => getAttendanceMode(a) === "virtual").length;
+    sheetAttendees = [
+      ["참석방식", ...keys],
+      ...ATTENDEES.map(a => [
+        getAttendanceMode(a) === "virtual" ? "Virtual" : "On-site",
+        ...keys.map(k => a[k] !== undefined ? a[k] : "")
+      ]),
+      [],
+      [`합계: ${ATTENDEES.length}명`, `On-site: ${onsiteCount}명`, `Virtual: ${virtualCount}명`]
+    ];
+  } else {
+    sheetAttendees = [
+      ["참석방식"],
+      ["(참가자 데이터 없음 — 참석자 관리 탭에서 가져오기)"]
+    ];
+  }
+
+  const onsiteTotal  = ATTENDEES.filter(a => getAttendanceMode(a) === "onsite").length;
+  const virtualTotal = ATTENDEES.filter(a => getAttendanceMode(a) === "virtual").length;
+  const matBySp2 = window.MATERIALS_BY_SPEAKER || {};
+  const pptCollected  = SP.filter(s => (matBySp2.ppt     || {})[s.id]?.collected).length;
+  const absCollected  = SP.filter(s => (matBySp2.abstract || {})[s.id]?.collected).length;
+
   return {
     info: [
       ["2026 IVI Global Vaccine Forum 운영 데이터"],
@@ -7519,15 +7611,19 @@ function _buildSheets() {
       ["요약"],
       ["체크리스트 진행률", `${CL.filter(t=>t.done).length} / ${CL.length} (${pct(CL.filter(t=>t.done).length, CL.length)}%)`],
       ["연사 확정", `${SP.filter(s=>s.status==="confirmed").length} / ${SP.length}명`],
+      ["일반 참가자", `${ATTENDEES.length}명 (On-site ${onsiteTotal} / Virtual ${virtualTotal})`],
+      ["PPT 수집", `${pptCollected} / ${SP.length}명`],
+      ["Abstract 수집", `${absCollected} / ${SP.length}명`],
       ["총 예산", `₩${BUDGET_ITEMS.reduce((s,b)=>s+b.budget,0).toLocaleString()}`],
     ],
-    checklist: sheetChecklist,
-    speakers:  sheetSpeakers,
-    budget:    sheetBudget,
-    travel:    sheetTravel,
-    entries:   sheetEntries,
-    todos:     todoRows,
-    agenda:    agendaRows,
+    checklist:  sheetChecklist,
+    speakers:   sheetSpeakers,
+    budget:     sheetBudget,
+    travel:     sheetTravel,
+    entries:    sheetEntries,
+    todos:      todoRows,
+    agenda:     agendaRows,
+    attendees:  sheetAttendees,
   };
 }
 
@@ -7544,6 +7640,7 @@ window.doExcel = () => {
     ["지출 내역", sheets.entries],
     ["To-do",    sheets.todos],
     ["Agenda",   sheets.agenda],
+    ["일반 참가자", sheets.attendees],
   ];
   order.forEach(([name, data]) => {
     const ws = XLSX.utils.aoa_to_sheet(data);
@@ -7572,6 +7669,7 @@ window.doExcelSheet = (kind) => {
     entries:   ["지출 내역", sheets.entries,   "지출내역"],
     todos:     ["To-do",    sheets.todos,     "Todo"],
     agenda:    ["Agenda",   sheets.agenda,    "Agenda"],
+    attendees: ["일반 참가자", sheets.attendees, "참가자"],
   };
   const m = map[kind];
   if (!m) return;
